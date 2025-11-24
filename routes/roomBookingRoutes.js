@@ -1,0 +1,34 @@
+// routes/roomBookingRoutes.js
+import express from "express";
+import {
+  createBooking,
+  getBooking,
+  listBookings,
+  checkoutBooking,
+  cancelBooking
+} from "../controllers/roomBookingController.js";
+import { protect, authorize } from "../utils/authMiddleware.js";
+import { createBookingSchema } from "../validators/bookingValidator.js";
+
+const router = express.Router();
+
+// Public endpoints: none (bookings created by front-desk only in this implementation)
+// Protect all booking routes
+router.use(protect);
+
+// Create booking - front office, GM, MD
+router.post("/", authorize("FRONT_OFFICE", "GM", "MD"), /* validate(createBookingSchema), */ createBooking);
+
+// List bookings - front office + higher
+router.get("/", authorize("FRONT_OFFICE", "GM", "MD"), listBookings);
+
+// Get booking details
+router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
+
+// Checkout / finalize booking
+router.post("/:id/checkout", authorize("FRONT_OFFICE", "GM", "MD"), checkoutBooking);
+
+// Cancel booking
+router.post("/:id/cancel", authorize("FRONT_OFFICE", "GM", "MD"), cancelBooking);
+
+export default router;
