@@ -42,3 +42,18 @@ export const updateRoom = asyncHandler(async (req, res) => {
 
   res.json({ success: true, room: updatedRoom });
 });
+
+export const deleteRoom = asyncHandler(async (req, res) => {
+  const roomId = req.params.id;
+  const hotel_id = req.user.hotel_id;
+
+  const deletedRoom = await roomService.deleteRoomById(roomId, hotel_id);
+
+  if (!deletedRoom) {
+    return res.status(404).json({ success: false, message: "Room not found" });
+  }
+
+  res.json({ success: true, message: "Room deleted successfully" });
+});
+
+

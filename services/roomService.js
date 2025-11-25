@@ -29,3 +29,8 @@ export const updateRoomById = async (id, hotel_id, payload) => {
     { new: true }
   );
 };
+
+export const deleteRoomById = async (id, hotel_id) => {
+  return Room.findOneAndDelete({ _id: id, hotel_id });
+};
+
