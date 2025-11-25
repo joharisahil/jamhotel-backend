@@ -11,7 +11,7 @@ const roomSchema = new mongoose.Schema({
   number: { type: String, required: true },
   type: String,
   floor: Number,
-  status: { type: String, default: "AVAILABLE" }, // AVAILABLE, BOOKED, CLEANING
+  status: { type: String, default: "AVAILABLE" }, // AVAILABLE, OOCUPIED, CLEANING
   baseRate: Number,
   maxGuests: { type: Number, default: 1 },
   plans: [planSchema],

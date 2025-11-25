@@ -11,7 +11,7 @@ const roomBookingSchema = new mongoose.Schema({
   planCode: String,
   adults: Number,
   children: Number,
-  status: { type: String, default: "BOOKED" },
+  status: { type: String, default: "OCCUPIED" },
   advancePaid: { type: Number, default: 0 },
   balanceDue: { type: Number, default: 0 },
   addedServices: [{ name: String, price: Number }]

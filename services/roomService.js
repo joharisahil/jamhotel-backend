@@ -11,8 +11,21 @@ export const createRoom = async (hotel_id, payload) => {
   
   return room;
 };
+
 export const listRooms = async (hotel_id, query = {}) => {
   return Room.find({ hotel_id, ...query });
 };
-export const findRoom = async (id) => Room.findById(id);
+
+export const getRoomById = async (id, hotel_id) => {
+  return Room.findOne({ _id: id, hotel_id });
+};
+
 export const updateRoom = async (id, payload) => Room.findByIdAndUpdate(id, payload, { new: true });
+
+export const updateRoomById = async (id, hotel_id, payload) => {
+  return Room.findOneAndUpdate(
+    { _id: id, hotel_id },
+    payload,
+    { new: true }
+  );
+};
