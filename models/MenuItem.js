@@ -5,6 +5,7 @@ const menuItemSchema = new mongoose.Schema({
   category_id: { type: mongoose.Schema.Types.ObjectId, ref: "MenuCategory", required: true },
   name: String,
   description: String,
+  priceSingle: Number, 
   priceHalf: Number,
   priceFull: Number,
   isActive: { type: Boolean, default: true },

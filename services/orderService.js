@@ -9,7 +9,12 @@ export const createOrder = async (payload) => {
   const items = [];
   for (const it of payload.items) {
     const menu = await MenuItem.findById(it.item_id);
-    const unitPrice = it.size === "HALF" ? (menu.priceHalf || menu.priceFull/2) : menu.priceFull;
+    const resolvePrice = (menu, size) => {
+    if (size === "HALF") return menu.priceHalf ?? (menu.priceFull / 2);
+    if (size === "FULL") return menu.priceFull;
+    return menu.priceSingle ?? menu.priceFull;
+    };
+    const unitPrice = resolvePrice(menu, it.size);
     const totalPrice = unitPrice * it.qty;
     subtotal += totalPrice;
     items.push({ item_id: it.item_id, name: menu.name, size: it.size, qty: it.qty, unitPrice, totalPrice });

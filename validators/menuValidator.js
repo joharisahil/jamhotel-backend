@@ -15,8 +15,10 @@ export const createMenuItemSchema = z.object({
   name: z.string().min(2),
   description: z.string().optional(),
 
+  priceSingle: z.number().optional(),
   priceHalf: z.number().optional(),
-  priceFull: z.number().min(1, "Price (full) is required"),
+  priceFull: z.number().optional(),
+  price: z.number().optional(),
 
   isActive: z.boolean().optional(),
   imageUrl: z.string().optional(),
@@ -28,6 +30,7 @@ export const updateMenuItemSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
 
+  price: z.number().optional(),
   priceHalf: z.number().optional(),
   priceFull: z.number().optional(),
 

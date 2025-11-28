@@ -2,8 +2,11 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import Table from "../models/Table.js";
 
 export const createTable = asyncHandler(async (req, res) => {
-  const table = await Table.create({ hotel_id: req.user.hotel_id, ...req.body });
-   const qrUrl = `${process.env.BASE_URL}/api/menu/qr/table/${table._id}/${hotel_id}`;
+  const hotel_id = req.user.hotel_id;
+
+  const table = await Table.create({ hotel_id, ...req.body });
+
+  const qrUrl = `${process.env.QR_URL}/menu/qr/table/${table._id}/${hotel_id}`;
 
   table.qrUrl = qrUrl;
   table.qrCodeId = `TABLE-${table._id}`;
@@ -18,7 +21,41 @@ export const listTables = asyncHandler(async (req, res) => {
   res.json({ success: true, tables });
 });
 
+export const getTable = asyncHandler(async (req, res) => {
+  const table = await Table.findOne({
+    _id: req.params.id,
+    hotel_id: req.user.hotel_id,
+  });
+
+  if (!table)
+    return res.status(404).json({ success: false, message: "Table not found" });
+
+  res.json({ success: true, table });
+});
+
 export const updateTable = asyncHandler(async (req, res) => {
   const table = await Table.findByIdAndUpdate(req.params.id, req.body, { new: true });
   res.json({ success: true, table });
 });
+
+// Delete table
+export const deleteTable = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;       // hotel of logged-in user
+  const tableId = req.params.id;
+
+  // Find table and ensure it belongs to same hotel
+  const table = await Table.findOne({ _id: tableId, hotel_id });
+  if (!table)
+    return res.status(404).json({
+      success: false,
+      message: "Table not found or unauthorized",
+    });
+
+  await Table.findByIdAndDelete(tableId);
+
+  res.json({
+    success: true,
+    message: "Table deleted successfully",
+  });
+});
+

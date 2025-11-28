@@ -2,7 +2,7 @@ import Room from "../models/Room.js";
 export const createRoom = async (hotel_id, payload) => {
   const room = await Room.create({ hotel_id, ...payload });
     // Auto-generate QR URL
-  const qrUrl = `${process.env.BASE_URL}/api/menu/qr/room/${room._id}/${hotel_id}`;
+  const qrUrl = `${process.env.QR_URL}/menu/qr/room/${room._id}/${hotel_id}`;
 
   room.qrUrl = qrUrl;
   room.qrCodeId = `ROOM-${room._id}`;

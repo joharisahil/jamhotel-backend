@@ -42,10 +42,41 @@ export const deleteCategory = async (hotel_id, id) => {
  * ------------------------
  */
 export const createMenuItem = async (hotel_id, payload) => {
-  const item = await MenuItem.create({ hotel_id, ...payload });
-  emitToHotel(hotel_id, "menu:updated", { type: "item_created", item });
+
+  const data = {
+    hotel_id,
+    category_id: payload.category_id,
+    name: payload.name,
+    description: payload.description || "",
+    isActive: payload.isActive ?? true,
+    prepTimeMins: payload.prepTimeMins || 0,
+    imageUrl: payload.imageUrl || "",
+  };
+
+  // ---- PRICE MAPPING (IMPORTANT) ----
+  if (payload.price !== undefined) {
+    data.priceSingle = Number(payload.price);
+  }
+
+  if (payload.priceHalf !== undefined) {
+    data.priceHalf = Number(payload.priceHalf);
+  }
+
+  if (payload.priceFull !== undefined) {
+    data.priceFull = Number(payload.priceFull);
+  }
+
+  // Save
+  const item = await MenuItem.create(data);
+
+  emitToHotel(hotel_id, "menu:updated", {
+    type: "item_created",
+    item,
+  });
+
   return item;
 };
+
 
 export const listMenuItems = async (hotel_id, category_id) => {
   const q = { hotel_id };

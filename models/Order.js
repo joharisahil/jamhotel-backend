@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const orderItemSchema = new mongoose.Schema({
   item_id: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem" },
   name: String,
-  size: String, // HALF or FULL
+  size: { type: String, enum: ["HALF", "FULL", "SINGLE"] },
   qty: Number,
   unitPrice: Number,
   totalPrice: Number
