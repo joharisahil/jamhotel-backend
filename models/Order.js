@@ -11,16 +11,46 @@ const orderItemSchema = new mongoose.Schema({
 
 const orderSchema = new mongoose.Schema({
   hotel_id: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
+
   source: String, // QR, TABLE, ROOM
   table_id: { type: mongoose.Schema.Types.ObjectId, ref: "Table" },
   room_id: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
+
   guestName: String,
   guestPhone: String,
+
   items: [orderItemSchema],
+
   subtotal: Number,
   gst: Number,
   total: Number,
-  status: { type: String, default: "NEW" }, 
+
+  status: { type: String, default: "NEW" },
+
+  // ------------------------------
+  // BILLING FIELDS (add these)
+  // ------------------------------
+  paymentStatus: {
+    type: String,
+    enum: ["PENDING", "PAID"],
+    default: "PENDING",
+  },
+
+  billNumber: {
+    type: String,
+    default: null,
+  },
+
+  discount: {
+    type: Number,
+    default: 0,
+  },
+
+  paidAt: {
+    type: Date,
+    default: null,
+  },
+
 }, { timestamps: true });
 
 orderSchema.index({ hotel_id: 1 });

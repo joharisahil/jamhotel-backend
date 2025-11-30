@@ -8,6 +8,7 @@ const menuItemSchema = new mongoose.Schema({
   priceSingle: Number, 
   priceHalf: Number,
   priceFull: Number,
+  isVeg:{ type: Boolean, default: true },
   isActive: { type: Boolean, default: true },
   imageUrl: String,
   gstPercent: { type: Number, default: 5 },

@@ -6,6 +6,8 @@ import {
   createMenuItemSchema,
   updateMenuItemSchema,
 } from "../validators/menuValidator.js";
+import Table from "../models/Table.js";
+import Room from "../models/Room.js"
 
 /**
  * CATEGORY CONTROLLERS
@@ -73,12 +75,25 @@ export const deleteMenuItem = asyncHandler(async (req, res) => {
  */
 export const publicMenu = asyncHandler(async (req, res) => {
   const hotel_id = req.params.hotelId;
+  const { source, id } = req.params;
+
   const menu = await menuService.getFullMenu(hotel_id);
+
+  let meta = null;
+
+  if (source === "table") {
+    meta = await Table.findById(id).select("name number");
+  }
+
+  if (source === "room") {
+    meta = await Room.findById(id).select("name number");
+  }
 
   res.json({
     success: true,
-    source: req.params.source, // room or table
-    id: req.params.id,
-    menu,
+    source,
+    id,
+    meta,        // 👈 ADDED
+    menu
   });
 });

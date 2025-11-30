@@ -20,7 +20,7 @@ const server = http.createServer(app);
 initSockets(server);
 
 const PORT = process.env.PORT || 5000;
-const MONGO = process.env.MONGO_URI;
+const MONGO = process.env.MONGO_URI_PRODUCTION;
 
 mongoose.connect(MONGO, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(()=> {

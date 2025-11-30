@@ -48,6 +48,7 @@ export const createMenuItem = async (hotel_id, payload) => {
     category_id: payload.category_id,
     name: payload.name,
     description: payload.description || "",
+    isVeg: payload.isVeg ?? true, 
     isActive: payload.isActive ?? true,
     prepTimeMins: payload.prepTimeMins || 0,
     imageUrl: payload.imageUrl || "",

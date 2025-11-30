@@ -19,6 +19,7 @@ export const createMenuItemSchema = z.object({
   priceHalf: z.number().optional(),
   priceFull: z.number().optional(),
   price: z.number().optional(),
+  isVeg: z.boolean().optional(),
 
   isActive: z.boolean().optional(),
   imageUrl: z.string().optional(),
