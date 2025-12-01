@@ -8,6 +8,7 @@ import {
 } from "../validators/menuValidator.js";
 import Table from "../models/Table.js";
 import Room from "../models/Room.js"
+import MenuItem from "../models/MenuItem.js";
 
 /**
  * CATEGORY CONTROLLERS
