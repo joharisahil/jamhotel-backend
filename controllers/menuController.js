@@ -34,11 +34,16 @@ export const updateCategory = asyncHandler(async (req, res) => {
   res.json({ success: true, category: updated });
 });
 
-export const deleteCategory = asyncHandler(async (req, res) => {
-  await menuService.deleteCategory(req.user.hotel_id, req.params.id);
+export const deleteCategory = async (hotel_id, id) => {
+  // Delete the category
+  await MenuCategory.findOneAndDelete({ _id: id, hotel_id });
+
+  // Delete items under that category
   await MenuItem.deleteMany({ category_id: id, hotel_id });
-  res.json({ success: true, message: "Deleted" });
-});
+
+  // Notify clients
+  emitToHotel(hotel_id, "menu:updated", { type: "category_deleted", id });
+};
 
 /**
  * MENU ITEM CONTROLLERS
