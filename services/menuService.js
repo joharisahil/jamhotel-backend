@@ -17,7 +17,7 @@ export const createCategory = async (hotel_id, payload) => {
 };
 
 export const listCategories = async (hotel_id) => {
-  return MenuCategory.find({ hotel_id }).sort({ order: 1, name: 1 });
+  return MenuCategory.find({ hotel_id }).sort({ _id: 1 });
 };
 
 export const updateCategory = async (hotel_id, id, payload) => {
@@ -83,7 +83,7 @@ export const createMenuItem = async (hotel_id, payload) => {
 export const listMenuItems = async (hotel_id, category_id) => {
   const q = { hotel_id };
   if (category_id) q.category_id = category_id;
-  return MenuItem.find(q).sort({ name: 1 });
+  return MenuItem.find(q).sort({ _id: 1 });
 };
 
 export const updateMenuItem = async (hotel_id, id, payload) => {
