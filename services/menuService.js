@@ -32,6 +32,7 @@ export const updateCategory = async (hotel_id, id, payload) => {
 
 export const deleteCategory = async (hotel_id, id) => {
   await MenuCategory.findOneAndDelete({ _id: id, hotel_id });
+  await MenuItem.deleteMany({ category_id: id, hotel_id });
   emitToHotel(hotel_id, "menu:updated", { type: "category_deleted", id });
 };
 
