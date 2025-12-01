@@ -35,6 +35,7 @@ export const updateCategory = asyncHandler(async (req, res) => {
 
 export const deleteCategory = asyncHandler(async (req, res) => {
   await menuService.deleteCategory(req.user.hotel_id, req.params.id);
+  await MenuItem.deleteMany({ category_id: id, hotel_id });
   res.json({ success: true, message: "Deleted" });
 });
 
