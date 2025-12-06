@@ -3,7 +3,8 @@ import mongoose from "mongoose";
 const planSchema = new mongoose.Schema({
   code: String,
   name: String,
-  rate: Number
+  singlePrice: { type: Number, required: true }, 
+  doublePrice: { type: Number, required: true } 
 }, { _id: false });
 
 const roomSchema = new mongoose.Schema({
