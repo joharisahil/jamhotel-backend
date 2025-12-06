@@ -56,4 +56,32 @@ export const deleteRoom = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Room deleted successfully" });
 });
 
+export const getRoomTypes = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
 
+  const types = await roomService.getRoomTypes(hotel_id);
+
+  res.json({ success: true, types });
+});
+
+export const getRoomsByType = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { type } = req.params;
+
+  const rooms = await roomService.getRoomsByType(hotel_id, type);
+
+  res.json({ success: true, rooms });
+});
+
+export const getRoomPlans = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { roomId } = req.params;
+
+  const plans = await roomService.getRoomPlans(hotel_id, roomId);
+
+  if (!plans) {
+    return res.status(404).json({ success: false, message: "Room not found" });
+  }
+
+  res.json({ success: true, plans });
+});
