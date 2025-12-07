@@ -14,7 +14,7 @@ const banquetBookingSchema = new mongoose.Schema({
   cateringItems: [{ name: String, qty: Number, price: Number }],
   linkedRoomIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Room" }],
   advancePaid: Number,
-  status: { type: String, default: "BOOKED" }
+  status: { type: String, default: "OCCUPIED" }
 }, { timestamps: true });
 
 export default mongoose.model("BanquetBooking", banquetBookingSchema);

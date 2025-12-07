@@ -80,7 +80,7 @@ export const createBooking = async (hotel_id, payload) => {
     const booking = await BanquetBooking.create([{
       hotel_id,
       ...payload,
-      status: "BOOKED"
+      status: "OCCUPIED"
     }], { session });
 
     // reserve linked rooms if provided
@@ -90,14 +90,14 @@ export const createBooking = async (hotel_id, payload) => {
       const conflicting = await Room.findOne({
         _id: { $in: roomIds },
         hotel_id,
-        status: { $in: ["BOOKED", "CHECKEDIN"] }
+        status: { $in: ["OCCUPIED", "CHECKEDIN"] }
       }).session(session);
       if (conflicting) throw new Error("One or more linked rooms are not available");
 
       // mark rooms as BOOKED (simple reservation; you may want to create RoomBooking records separately)
       await Room.updateMany(
         { _id: { $in: roomIds }, hotel_id },
-        { $set: { status: "BOOKED" } },
+        { $set: { status: "OCCUPIED" } },
         { session }
       );
     }
