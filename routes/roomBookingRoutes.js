@@ -4,6 +4,7 @@ import {
   createBooking,
   getBooking,
   listBookings,
+  getCurrentBookingForRoom,
   checkoutBooking,
   cancelBooking
 } from "../controllers/roomBookingController.js";
@@ -24,6 +25,8 @@ router.get("/", authorize("FRONT_OFFICE", "GM", "MD"), listBookings);
 
 // Get booking details
 router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
+
+router.get("/current/:roomId", authorize("FRONT_OFFICE", "GM", "MD"), getCurrentBookingForRoom );
 
 // Checkout / finalize booking
 router.post("/:id/checkout", authorize("FRONT_OFFICE", "GM", "MD"), checkoutBooking);

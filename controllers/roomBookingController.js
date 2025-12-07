@@ -94,3 +94,20 @@ export const cancelBooking = asyncHandler(async (req, res) => {
 
   res.json({ success: true, booking });
 });
+
+export const getCurrentBookingForRoom = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { roomId } = req.params;
+
+  const booking = await RoomBooking.findOne({
+    hotel_id,
+    room_id: roomId,
+    status: { $in: ["OCCUPIED", "CHECKEDIN"] }
+  }).populate("room_id");
+
+  if (!booking) {
+    return res.json({ success: true, booking: null });
+  }
+
+  res.json({ success: true, booking });
+});
