@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const createBookingSchema = z.object({
   room_id: z.string(),
   guestName: z.string(),
