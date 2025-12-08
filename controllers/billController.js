@@ -102,3 +102,37 @@ export const listRoomInvoices = asyncHandler(async (req, res) => {
 
   res.json({ success: true, bills: formatted, total });
 });
+
+export const getRoomInvoiceById = asyncHandler(async (req, res) => {
+  const { billId } = req.params;
+  const hotel_id = req.user.hotel_id;
+
+  const invoice = await RoomInvoice.findOne({
+    _id: billId,
+    hotel_id,
+  }).populate("room_id");
+
+  if (!invoice) {
+    return res.status(404).json({
+      success: false,
+      message: "Room invoice not found",
+    });
+  }
+
+  res.json({
+    success: true,
+    bill: {
+      _id: invoice._id,
+      billNumber: invoice.invoiceNumber,
+      source: "ROOM",
+      customerName: invoice.guestName,
+      customerPhone: invoice.guestPhone,
+      finalAmount: invoice.totalAmount,
+      createdAt: invoice.createdAt,
+      room_id: invoice.room_id,
+
+      // Full invoice details for view page
+      fullInvoice: invoice
+    }
+  });
+});
