@@ -54,3 +54,50 @@ export const getBillById = asyncHandler(async (req, res) => {
 
   res.json({ success: true, bill });
 });
+
+export const listRoomInvoices = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { search, from, to, page = 1, limit = 50 } = req.query;
+
+  const q = { hotel_id };
+
+  if (from || to) {
+    q.createdAt = {};
+    if (from) q.createdAt.$gte = new Date(from);
+    if (to) q.createdAt.$lte = new Date(to);
+  }
+
+  if (search) {
+    const s = String(search).trim();
+    q.$or = [
+      { invoiceNumber: { $regex: s, $options: "i" } },
+      { guestPhone: { $regex: s, $options: "i" } },
+      { guestName: { $regex: s, $options: "i" } }
+    ];
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const [invoices, total] = await Promise.all([
+    RoomInvoice.find(q)
+      .populate("room_id")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit)),
+    RoomInvoice.countDocuments(q)
+  ]);
+
+  // FORMAT RESPONSE to match "Bill" model, so frontend doesn't need changes
+  const formatted = invoices.map(inv => ({
+    _id: inv._id,
+    billNumber: inv.invoiceNumber,   // same field used in Bill
+    source: "ROOM",
+    customerName: inv.guestName,
+    customerPhone: inv.guestPhone,
+    finalAmount: inv.totalAmount,
+    createdAt: inv.createdAt,
+    room_id: inv.room_id
+  }));
+
+  res.json({ success: true, bills: formatted, total });
+});
