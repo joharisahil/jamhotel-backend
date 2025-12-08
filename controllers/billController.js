@@ -107,32 +107,32 @@ export const getRoomInvoiceById = asyncHandler(async (req, res) => {
   const { billId } = req.params;
   const hotel_id = req.user.hotel_id;
 
-  const invoice = await RoomInvoice.findOne({
-    _id: billId,
-    hotel_id,
-  }).populate("room_id");
+  // Find room invoice
+  const invoice = await RoomInvoice.findOne({ _id: billId, hotel_id })
+    .populate("room_id");
 
   if (!invoice) {
     return res.status(404).json({
       success: false,
-      message: "Room invoice not found",
+      message: "Room invoice not found"
     });
   }
 
+  // Return in same format as Bill so frontend works without change
+  const formatted = {
+    _id: invoice._id,
+    billNumber: invoice.invoiceNumber,
+    source: "ROOM",
+    customerName: invoice.guestName,
+    customerPhone: invoice.guestPhone,
+    createdAt: invoice.createdAt,
+    finalAmount: invoice.totalAmount,
+    room_id: invoice.room_id,
+    fullInvoice: invoice   // contains stay + services + food breakdown
+  };
+
   res.json({
     success: true,
-    bill: {
-      _id: invoice._id,
-      billNumber: invoice.invoiceNumber,
-      source: "ROOM",
-      customerName: invoice.guestName,
-      customerPhone: invoice.guestPhone,
-      finalAmount: invoice.totalAmount,
-      createdAt: invoice.createdAt,
-      room_id: invoice.room_id,
-
-      // Full invoice details for view page
-      fullInvoice: invoice
-    }
+    bill: formatted
   });
 });
