@@ -4,6 +4,7 @@ import * as bookingService from "../services/bookingService.js";
 import RoomBooking from "../models/RoomBooking.js";
 import Room from "../models/Room.js";
 import { createBookingSchema } from "../validators/bookingValidator.js";
+import RoomInvoice from "../models/RoomInvoice.js";
 
 /**
  * Create a new room booking (Front Office)
@@ -62,12 +63,8 @@ export const listBookings = asyncHandler(async (req, res) => {
  */
 export const checkoutBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  // service handles transaction and room status change
-  const booking = await bookingService.checkoutBooking(id);
-
-  // optional: populate room for response
-  const populated = await RoomBooking.findById(booking._id).populate("room_id");
-  res.json({ success: true, booking: populated });
+  const invoice = await bookingService.checkoutBooking(id, req.user._id);
+  res.json({ success: true, invoice });
 });
 
 /**
@@ -110,4 +107,19 @@ export const getCurrentBookingForRoom = asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true, booking });
+});
+
+export const getInvoicesByRoom = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { roomId } = req.params;
+
+  const invoices = await RoomInvoice.find({
+    hotel_id,
+    room_id: roomId
+  }).sort({ createdAt: -1 });
+
+  res.json({
+    success: true,
+    invoices
+  });
 });

@@ -39,7 +39,6 @@ export const getPendingTables = asyncHandler(async (req, res) => {
   res.json({ success: true, tables: result });
 });
 
-
 export const getTableBill = asyncHandler(async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;

@@ -6,7 +6,8 @@ import {
   listBookings,
   getCurrentBookingForRoom,
   checkoutBooking,
-  cancelBooking
+  cancelBooking,
+  getInvoicesByRoom
 } from "../controllers/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 import { createBookingSchema } from "../validators/bookingValidator.js";
@@ -33,5 +34,7 @@ router.post("/:id/checkout", authorize("FRONT_OFFICE", "GM", "MD"), checkoutBook
 
 // Cancel booking
 router.post("/:id/cancel", authorize("FRONT_OFFICE", "GM", "MD"), cancelBooking);
+// Get all invoices for a room
+router.get("/:roomId/invoices", authorize("FRONT_OFFICE", "GM", "MD"), getInvoicesByRoom);
 
 export default router;
