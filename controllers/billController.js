@@ -1,5 +1,6 @@
 import Bill from "../models/Bill.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import RoomInvoice from "../models/RoomInvoice.js";
 
 /**
  * GET /billing
