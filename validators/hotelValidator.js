@@ -5,6 +5,7 @@ export const createHotelSchema = z.object({
   address: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email("Invalid hotel email").optional(),
+  gstNumber: z.string().optional(),
   timezone: z.string().optional(),
   currency: z.string().optional(),
   gst_enabled: z.boolean().optional()
@@ -15,6 +16,7 @@ export const updateHotelSchema = z.object({
   address: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email("Invalid email").optional(),
+  gstNumber: z.string().optional(),
   timezone: z.string().optional(),
   currency: z.string().optional(),
   gst_enabled: z.boolean().optional()
