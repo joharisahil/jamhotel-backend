@@ -37,4 +37,8 @@ router.post("/:id/cancel", authorize("FRONT_OFFICE", "GM", "MD"), cancelBooking)
 // Get all invoices for a room
 router.get("/:roomId/invoices", authorize("FRONT_OFFICE", "GM", "MD"), getInvoicesByRoom);
 
+router.post("/:id/change-room", authorize("FRONT_OFFICE", "GM", "MD"), changeRoom);
+router.post("/:id/extend-stay", authorize("FRONT_OFFICE", "GM", "MD"), extendStay);
+
+
 export default router;

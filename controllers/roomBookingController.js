@@ -123,3 +123,75 @@ export const getInvoicesByRoom = asyncHandler(async (req, res) => {
     invoices
   });
 });
+
+/**
+ * Change Room
+ */
+export const changeRoom = asyncHandler(async (req, res) => {
+  const { id } = req.params; // booking ID
+  const { newRoomId } = req.body;
+
+  const booking = await RoomBooking.findById(id);
+  if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+  // permission check
+  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+    return res.status(403).json({ success: false, message: "Forbidden" });
+  }
+
+  const oldRoomId = booking.room_id;
+
+  // Ensure new room exists
+  const newRoom = await Room.findById(newRoomId);
+  if (!newRoom) return res.status(404).json({ success: false, message: "New room not found" });
+
+  // Update booking
+  booking.room_id = newRoomId;
+  await booking.save();
+
+  // Free old room
+  await Room.findByIdAndUpdate(oldRoomId, { status: "AVAILABLE" });
+
+  // Occupy new room
+  await Room.findByIdAndUpdate(newRoomId, { status: "OCCUPIED" });
+
+  // 👉 Transfer all PENDING food orders to new room
+  await Order.updateMany(
+    {
+      room_id: oldRoomId,
+      hotel_id: booking.hotel_id,
+      paymentStatus: "PENDING"
+    },
+    { room_id: newRoomId }
+  );
+
+  res.json({
+    success: true,
+    message: "Room changed successfully",
+    booking
+  });
+});
+
+/**
+ * Extend Stay
+ */
+export const extendStay = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { newCheckOut } = req.body;
+
+  const booking = await RoomBooking.findById(id);
+  if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+    return res.status(403).json({ success: false, message: "Forbidden" });
+  }
+
+  booking.checkOut = new Date(newCheckOut);
+  await booking.save();
+
+  res.json({
+    success: true,
+    message: "Stay extended successfully",
+    booking
+  });
+});
