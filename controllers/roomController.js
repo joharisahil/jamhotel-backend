@@ -88,11 +88,20 @@ export const getRoomPlans = asyncHandler(async (req, res) => {
 
 export const listAvailableRooms = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
+  const { type } = req.query;
 
-  const rooms = await Room.find({
+  const filter = {
     hotel_id,
     status: "AVAILABLE"
-  }).sort({ number: 1 });
+  };
+
+  if (type) {
+    filter.type = type;
+  }
+
+  const rooms = await Room.find(filter).sort({ number: 1 });
 
   res.json({ success: true, rooms });
 });
+
+
