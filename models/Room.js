@@ -19,6 +19,7 @@ const roomSchema = new mongoose.Schema({
   extras: [{ name: String, price: Number }],
   qrUrl: String,
   qrCodeId: String,
+  sessionToken: { type: String, default: null }
 }, { timestamps: true });
 
 roomSchema.index({ hotel_id: 1, number: 1 }, { unique: true });

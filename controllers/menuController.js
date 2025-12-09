@@ -82,11 +82,11 @@ export const publicMenu = asyncHandler(async (req, res) => {
   let meta = null;
 
   if (source === "table") {
-    meta = await Table.findById(id).select("name number");
+    meta = await Table.findById(id).select("name number sessionToken");
   }
 
   if (source === "room") {
-    meta = await Room.findById(id).select("name number");
+    meta = await Room.findById(id).select("name number sessionToken");
   }
 
   res.json({

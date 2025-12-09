@@ -56,6 +56,9 @@ export const createOrder = async (payload) => {
         { name: `T${payload.table_id}` },
       ],
     });
+  if (!tbl || tbl.sessionToken !== payload.sessionToken) {
+    return { success: false, message: "QR session expired. Please rescan." };
+  }
 
     if (tbl) {
       await Order.findByIdAndUpdate(order._id, { table_id: tbl._id });
@@ -68,6 +71,9 @@ export const createOrder = async (payload) => {
       hotel_id: payload.hotel_id,
       number: payload.room_id,
     });
+      if (!room || room.sessionToken !== payload.sessionToken) {
+    return { success: false, message: "QR session expired. Please rescan." };
+  }
 
     if (rm) {
       await Order.findByIdAndUpdate(order._id, { room_id: rm._id });
@@ -109,6 +115,20 @@ export const updateOrderStatus = async (orderId, status) => {
   const populatedOrder = await Order.findById(orderId)
     .populate("table_id", "name")
     .populate("room_id", "number");
+
+    // 🔥 CLEAR SESSION TOKEN if delivered
+  if (status === "DELIVERED") {
+    if (populatedOrder.room_id) {
+      await Room.findByIdAndUpdate(populatedOrder.room_id._id, {
+        sessionToken: null
+      });
+    }
+    if (populatedOrder.table_id) {
+      await Table.findByIdAndUpdate(populatedOrder.table_id._id, {
+        sessionToken: null
+      });
+    }
+  }  
 
   // Emit updated populated order
   emitToHotel(populatedOrder.hotel_id, "order:status_update", populatedOrder);

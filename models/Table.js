@@ -8,6 +8,7 @@ const tableSchema = new mongoose.Schema({
   locationDesc: String,
   qrUrl: String,
   qrCodeId: String,
+  sessionToken: { type: String, default: null }
 }, { timestamps: true });
 
 tableSchema.index({ hotel_id: 1 });
