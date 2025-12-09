@@ -7,6 +7,6 @@ export const createOrderSchema = z.object({
   room_id: z.string().optional(),
   guestName: z.string().optional(),
   guestPhone: z.string().optional(),
-  sessionToken: z.string(),
+  sessionToken: z.string().optional(),
   items: z.array(z.object({ item_id: z.string(), size: z.enum(["SINGLE", "HALF", "FULL"]), qty: z.number().min(1) }))
 });
