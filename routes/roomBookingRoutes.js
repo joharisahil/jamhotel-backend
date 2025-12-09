@@ -7,7 +7,9 @@ import {
   getCurrentBookingForRoom,
   checkoutBooking,
   cancelBooking,
-  getInvoicesByRoom
+  getInvoicesByRoom,
+  changeRoom,
+  extendStay
 } from "../controllers/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 import { createBookingSchema } from "../validators/bookingValidator.js";
