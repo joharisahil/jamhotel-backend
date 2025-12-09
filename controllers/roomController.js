@@ -1,6 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import * as roomService from "../services/roomService.js";
 import { createRoomSchema } from "../validators/roomValidator.js";
+import Room from "../models/Room.js"; 
 
 export const createRoom = asyncHandler(async (req,res) => {
   const payload = createRoomSchema.parse(req.body);
