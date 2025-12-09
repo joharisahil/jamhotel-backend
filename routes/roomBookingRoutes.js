@@ -12,7 +12,6 @@ import {
   extendStay
 } from "../controllers/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
-import { createBookingSchema } from "../validators/bookingValidator.js";
 
 const router = express.Router();
 
