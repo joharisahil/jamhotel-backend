@@ -131,19 +131,37 @@ export const changeRoom = asyncHandler(async (req, res) => {
   const { id } = req.params; // booking ID
   const { newRoomId } = req.body;
 
-  const booking = await RoomBooking.findById(id);
-  if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+  const booking = await RoomBooking.findById(id).populate("room_id");
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
 
-  // permission check
+  // Permission check
   if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
     return res.status(403).json({ success: false, message: "Forbidden" });
   }
 
-  const oldRoomId = booking.room_id;
+  const oldRoomId = booking.room_id._id;
 
-  // Ensure new room exists
+  // Load new room
   const newRoom = await Room.findById(newRoomId);
-  if (!newRoom) return res.status(404).json({ success: false, message: "New room not found" });
+  if (!newRoom)
+    return res.status(404).json({ success: false, message: "New room not found" });
+
+  // 🔥 Ensure new room is same type
+  if (newRoom.type !== booking.room_id.type) {
+    return res.status(400).json({
+      success: false,
+      message: "Room change allowed only to same room type"
+    });
+  }
+
+  // 🔥 Ensure new room is available
+  if (newRoom.status !== "AVAILABLE") {
+    return res.status(400).json({
+      success: false,
+      message: "Selected room is not available"
+    });
+  }
 
   // Update booking
   booking.room_id = newRoomId;
@@ -160,7 +178,7 @@ export const changeRoom = asyncHandler(async (req, res) => {
     {
       room_id: oldRoomId,
       hotel_id: booking.hotel_id,
-      paymentStatus: "PENDING"
+      paymentStatus: "PENDING",
     },
     { room_id: newRoomId }
   );
@@ -168,7 +186,7 @@ export const changeRoom = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Room changed successfully",
-    booking
+    booking,
   });
 });
 
