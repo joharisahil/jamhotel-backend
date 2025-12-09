@@ -5,6 +5,7 @@ import RoomBooking from "../models/RoomBooking.js";
 import Room from "../models/Room.js";
 import { createBookingSchema } from "../validators/bookingValidator.js";
 import RoomInvoice from "../models/RoomInvoice.js";
+import Order from "../models/Order.js";
 
 /**
  * Create a new room booking (Front Office)
