@@ -15,6 +15,7 @@ export const createBooking = async ({
   children,
   advancePaid = 0,
   discount = 0,
+  guestIds = [],
   addedServices = [],
   ...rest
 }) => {

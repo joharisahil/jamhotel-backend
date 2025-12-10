@@ -11,6 +11,12 @@ export const createBookingSchema = z.object({
   children: z.number(),
   advancePaid: z.number().default(0),
   discount: z.number().default(0),
+  guestIds: z.array(z.object({
+  type: z.enum(["Aadhaar Card", "Driving License", "Passport", "Voter ID"]),
+  idNumber: z.string().min(3),
+  nameOnId: z.string().min(2)
+})).optional(),
+
   addedServices: z.array(
     z.object({
       name: z.string(),
