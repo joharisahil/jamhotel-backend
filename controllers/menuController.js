@@ -90,12 +90,13 @@ export const publicMenu = asyncHandler(async (req, res) => {
   }
 
   // 🚨 NEW ADDITION
-if (!meta || !meta.sessionToken) {
+if (!meta) {
   return res.json({
     success: false,
-    message: "QR expired. Please rescan.",
+    message: "Invalid QR",
   });
 }
+
 
   res.json({
     success: true,
