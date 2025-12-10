@@ -105,4 +105,21 @@ export const listAvailableRooms = asyncHandler(async (req, res) => {
   res.json({ success: true, rooms });
 });
 
+export const getAvailableRooms = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { checkIn, checkOut, type } = req.query;
+
+  if (!checkIn || !checkOut) {
+    return res.status(400).json({ success: false, message: "checkIn and checkOut are required" });
+  }
+
+  const rooms = await roomService.getAvailableRoomsForDates(
+    hotel_id,
+    checkIn,
+    checkOut,
+    type || null
+  );
+
+  res.json({ success: true, rooms });
+});
 
