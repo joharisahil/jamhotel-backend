@@ -5,14 +5,13 @@ import {
   listCategories,
   updateCategory,
   deleteCategory,
-
   createMenuItem,
   listMenuItems,
   updateMenuItem,
   deleteMenuItem,
-
   publicMenu
 } from "../controllers/menuController.js";
+import { startQrSession } from "../controllers/qrController.js";
 
 import { protect, authorize } from "../utils/authMiddleware.js";
 
@@ -24,6 +23,7 @@ const router = express.Router();
  * table: /api/menu/qr/table/:tableId/:hotelId
  */
 router.get("/qr/:source(room|table)/:id/:hotelId", publicMenu);
+router.post("/qr/session/start", startQrSession);
 /**
  * ADMIN ROUTES (MD / GM / RESTAURANT_MANAGER)
  */
