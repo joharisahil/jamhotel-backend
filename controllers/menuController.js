@@ -89,6 +89,14 @@ export const publicMenu = asyncHandler(async (req, res) => {
     meta = await Room.findById(id).select("name number sessionToken");
   }
 
+  // 🚨 NEW ADDITION
+if (!meta || !meta.sessionToken) {
+  return res.json({
+    success: false,
+    message: "QR expired. Please rescan.",
+  });
+}
+
   res.json({
     success: true,
     source,
