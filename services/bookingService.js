@@ -149,15 +149,22 @@ export const checkoutBooking = async (bookingId, userId) => {
     const foodGST = foodOrders.reduce((s, o) => s + o.gst, 0);
     const foodTotal = foodSubtotal + foodGST;
 
-    // 3️⃣ Apply discount (percent)
-    const discountPercent = Number(booking.discount || 0);
-    const discountAmount = +(
-      (stayTotal + stayGST + foodTotal) *
-      (discountPercent / 100)
-    ).toFixed(2);
+// 3️⃣ Apply discount correctly (ONLY on room charges)
+const discountPercent = Number(booking.discount || 0);
 
-    const finalAmount = (stayTotal + stayGST + foodTotal) - discountAmount;
-    const balanceDue = finalAmount - (booking.advancePaid || 0);
+// Discount must apply ONLY on stay charges (stayTotal + stayGST)
+const discountBase = stayTotal + stayGST;
+
+const discountAmount = +(
+  discountBase * (discountPercent / 100)
+).toFixed(2);
+
+// Final amount = (room after discount) + food total
+const finalAmount = (discountBase - discountAmount) + foodTotal;
+
+// Remaining balance
+const balanceDue = finalAmount - (booking.advancePaid || 0);
+
 
     const invoiceNumber = "ROOM-" + Date.now();
 
