@@ -75,6 +75,7 @@ export const createBooking = async ({
     children,
     advancePaid,
     discount,
+    guestIds,  
     addedServices,
     balanceDue,
     ...rest
