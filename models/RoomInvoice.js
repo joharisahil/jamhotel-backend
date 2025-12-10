@@ -14,6 +14,11 @@ const roomInvoiceSchema = new mongoose.Schema({
   stayNights: Number,
   roomRate: Number,
   stayAmount: Number,
+
+   // NEW — GST BREAKUP (5% → 2.5% + 2.5%)
+  stayCGST: { type: Number, default: 0 },
+  staySGST: { type: Number, default: 0 },
+  stayGST: { type: Number, default: 0 },
   extraServices: [{ name: String, price: Number }],
 
   // FOOD CHARGES
