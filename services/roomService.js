@@ -76,31 +76,44 @@ export const getRoomPlans = async (hotel_id, roomId) => {
   return formattedPlans;
 };
 
+// services/roomService.js  (replace the function implementation)
 export const getAvailableRoomsForDates = async (hotel_id, checkIn, checkOut, roomType = null) => {
+  // normalize dates from input (assumes YYYY-MM-DD input)
+  // treat checkOut as EXCLUSIVE: a booking that checks out on day X
+  // does not conflict with a new booking that checks in on day X.
   const start = new Date(checkIn);
   const end = new Date(checkOut);
 
-  // 1️⃣ Find all bookings that overlap the given range
+  // Defensive: ensure valid dates
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+    throw new Error("Invalid date range");
+  }
+
+  // Overlap condition (strict):
+  // existingBooking.checkIn < newEnd  AND existingBooking.checkOut > newStart
+  // This makes checkOut exclusive (no overlap when existing.checkOut === newStart)
   const overlappingBookings = await RoomBooking.find({
     hotel_id,
+    // exclude cancelled bookings only
     status: { $nin: ["CANCELLED"] },
-    $or: [
-      { checkIn: { $lte: end }, checkOut: { $gte: start } }
+    $and: [
+      { checkIn: { $lt: end } },
+      { checkOut: { $gt: start } }
     ]
   }).select("room_id");
 
-  const occupiedRoomIds = overlappingBookings.map(b => b.room_id.toString());
+  const occupiedRoomIds = overlappingBookings.map(b => String(b.room_id));
 
-  // 2️⃣ Base query
+  // Query rooms excluding the occupiedRoomIds
   const query = {
     hotel_id,
-    status: "AVAILABLE", // optional, can remove if you want show ALL except booked
     _id: { $nin: occupiedRoomIds }
   };
 
-  // 3️⃣ Optionally filter by type
   if (roomType) query.type = roomType;
 
-  // 4️⃣ Return available rooms
-  return await Room.find(query).sort({ number: 1 });
+  // NOTE: intentionally NOT filtering by current Room.status,
+  // because a room may be currently OCCUPIED but available in the requested future range.
+  return Room.find(query).sort({ number: 1 });
 };
+
