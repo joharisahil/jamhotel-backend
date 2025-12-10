@@ -47,38 +47,23 @@ export const createOrder = async (payload) => {
   });
 
   // Resolve table string → ObjectId
-  if (payload.table_id && !mongoose.isValidObjectId(payload.table_id)) {
-    const tbl = await Table.findOne({
-      hotel_id: payload.hotel_id,
-      $or: [
-        { name: payload.table_id },
-        { name: `Table ${payload.table_id}` },
-        { name: `T${payload.table_id}` },
-      ],
-    });
+ // Always validate QR session for table
+if (payload.table_id) {
+  const tbl = await Table.findById(payload.table_id);
   if (!tbl || tbl.sessionToken !== payload.sessionToken) {
     return { success: false, message: "QR session expired. Please rescan." };
   }
+}
 
-    if (tbl) {
-      await Order.findByIdAndUpdate(order._id, { table_id: tbl._id });
-    }
-  }
 
   // Resolve room string → ObjectId
-  if (payload.room_id && !mongoose.isValidObjectId(payload.room_id)) {
-    const rm = await Room.findOne({
-      hotel_id: payload.hotel_id,
-      number: payload.room_id,
-    });
-      if (!room || room.sessionToken !== payload.sessionToken) {
+ if (payload.room_id) {
+  const rm = await Room.findById(payload.room_id);
+  if (!rm || rm.sessionToken !== payload.sessionToken) {
     return { success: false, message: "QR session expired. Please rescan." };
   }
+}
 
-    if (rm) {
-      await Order.findByIdAndUpdate(order._id, { room_id: rm._id });
-    }
-  }
 
   // Fetch populated order
   const populatedOrder = await Order.findById(order._id)
