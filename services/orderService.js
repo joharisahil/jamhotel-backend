@@ -7,6 +7,20 @@ import mongoose from "mongoose";
 import { emitToHotel, emitToRole } from "../utils/socket.js";   
 
 export const createOrder = async (payload) => {
+
+  let entity = null;
+
+  if (payload.table_id) {
+    entity = await Table.findById(payload.table_id);
+  }
+  if (payload.room_id) {
+    entity = await Room.findById(payload.room_id);
+  }
+
+  if (!entity || entity.sessionToken !== payload.sessionToken) {
+    return { success: false, message: "QR session expired. Please rescan." };
+  }
+
   let subtotal = 0;
   const items = [];
 
