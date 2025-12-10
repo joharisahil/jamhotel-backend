@@ -83,7 +83,7 @@ export const getAvailableRoomsForDates = async (hotel_id, checkIn, checkOut, roo
   // 1️⃣ Find all bookings that overlap the given range
   const overlappingBookings = await RoomBooking.find({
     hotel_id,
-    status: { $in: ["OCCUPIED", "CHECKEDIN"] },
+    status: { $nin: ["CANCELLED"] },
     $or: [
       { checkIn: { $lte: end }, checkOut: { $gte: start } }
     ]
