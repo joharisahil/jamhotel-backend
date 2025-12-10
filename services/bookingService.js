@@ -96,43 +96,56 @@ export const checkoutBooking = async (bookingId, userId) => {
     if (!booking) throw new Error("Booking not found");
 
     const room = await Room.findById(booking.room_id).session(session);
+    if (!room) throw new Error("Room not found");
 
     // 1️⃣ Calculate stay charges
     const plan = room.plans.find(p =>
       `${p.code}_SINGLE` === booking.planCode ||
       `${p.code}_DOUBLE` === booking.planCode
     );
-    const rate = booking.planCode.includes("SINGLE") ? plan.singlePrice : plan.doublePrice;
+    if (!plan) throw new Error("Invalid plan code");
+
+    const rate = booking.planCode.includes("SINGLE")
+      ? plan.singlePrice
+      : plan.doublePrice;
 
     const nights = Math.max(
       1,
-      Math.ceil((new Date(booking.checkOut) - new Date(booking.checkIn)) / (1000*60*60*24))
+      Math.ceil(
+        (new Date(booking.checkOut) - new Date(booking.checkIn)) /
+        (1000 * 60 * 60 * 24)
+      )
     );
 
     const stayAmount = rate * nights;
     const extraTotal = booking.addedServices.reduce((sum, e) => sum + e.price, 0);
     const stayTotal = stayAmount + extraTotal;
 
-    // 2️⃣ Fetch food orders for this room
+    // ⭐ NEW: GST SPLIT (5% total → CGST 2.5% + SGST 2.5%)
+    const stayCGST = +(stayTotal * 0.025).toFixed(2);
+    const staySGST = +(stayTotal * 0.025).toFixed(2);
+    const stayGST = stayCGST + staySGST;
+
+    // 2️⃣ Fetch food orders
     const foodOrders = await Order.find({
       room_id: booking.room_id,
       hotel_id: booking.hotel_id,
       paymentStatus: "PENDING",
-      status: "DELIVERED"
+      status: "DELIVERED",
     }).session(session);
 
-    const foodSubtotal = foodOrders.reduce((s,o)=> s + o.subtotal, 0);
-    const foodGST = foodOrders.reduce((s,o)=> s + o.gst, 0);
+    const foodSubtotal = foodOrders.reduce((s, o) => s + o.subtotal, 0);
+    const foodGST = foodOrders.reduce((s, o) => s + o.gst, 0);
     const foodTotal = foodSubtotal + foodGST;
 
-    // 3️⃣ Final bill
-    const totalBeforeDiscount = stayTotal + foodTotal;
+    // 3️⃣ Calculate final invoice amount
+    const totalBeforeDiscount = stayTotal + stayGST + foodTotal;
     const finalAmount = totalBeforeDiscount - (booking.discount || 0);
-    const balanceDue = finalAmount - booking.advancePaid;
+    const balanceDue = finalAmount - (booking.advancePaid || 0);
 
     const invoiceNumber = "ROOM-" + Date.now();
 
-    // 4️⃣ Save invoice
+    // 4️⃣ Save invoice with GST breakup
     const invoice = await RoomInvoice.create([{
       hotel_id: booking.hotel_id,
       bookingId: booking._id,
@@ -147,12 +160,16 @@ export const checkoutBooking = async (bookingId, userId) => {
       stayAmount,
       extraServices: booking.addedServices || [],
 
+      stayCGST,
+      staySGST,
+      stayGST,
+
       foodOrders: foodOrders.map(o => ({
         order_id: o._id,
         items: o.items,
         subtotal: o.subtotal,
         gst: o.gst,
-        total: o.total
+        total: o.total,
       })),
       foodSubtotal,
       foodGST,
@@ -166,20 +183,23 @@ export const checkoutBooking = async (bookingId, userId) => {
 
     // 5️⃣ Mark food orders as paid
     await Order.updateMany(
-      { _id: { $in: foodOrders.map(o=>o._id) }},
+      { _id: { $in: foodOrders.map(o => o._id) } },
       { paymentStatus: "PAID" },
       { session }
     );
 
-    // 6️⃣ Checkout booking
+    // 6️⃣ Mark booking as checked out
     booking.status = "CHECKEDOUT";
     booking.balanceDue = balanceDue;
     await booking.save({ session });
 
     // 7️⃣ Release room
-    await Room.findByIdAndUpdate(booking.room_id, { status: "AVAILABLE" }).session(session);
+    await Room.findByIdAndUpdate(
+      booking.room_id,
+      { status: "AVAILABLE" }
+    ).session(session);
 
-    // 8️⃣ Create transaction entry
+    // 8️⃣ Create financial transaction
     await transactionService.createTransaction(booking.hotel_id, {
       type: "CREDIT",
       source: "ROOM",
