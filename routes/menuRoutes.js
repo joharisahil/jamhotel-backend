@@ -9,7 +9,8 @@ import {
   listMenuItems,
   updateMenuItem,
   deleteMenuItem,
-  publicMenu
+  publicMenu,
+  searchMenuItems
 } from "../controllers/menuController.js";
 import { startQrSession } from "../controllers/qrController.js";
 
@@ -39,5 +40,6 @@ router.post("/item", createMenuItem);
 router.get("/item", listMenuItems);
 router.put("/item/:id", updateMenuItem);
 router.delete("/item/:id", deleteMenuItem);
+router.get("/search", searchMenuItems);
 
 export default router;

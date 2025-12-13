@@ -7,7 +7,8 @@ import {
   updateMenuItemSchema,
 } from "../validators/menuValidator.js";
 import Table from "../models/Table.js";
-import Room from "../models/Room.js"
+import Room from "../models/Room.js";
+import MenuItem from "../models/MenuItem.js";
 
 /**
  * CATEGORY CONTROLLERS
@@ -105,4 +106,16 @@ if (!meta) {
     meta,        // 👈 ADDED
     menu
   });
+});
+
+export const searchMenuItems = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const q = req.query.q || "";
+
+  const items = await MenuItem.find({
+    hotel_id,
+    name: { $regex: q, $options: "i" } // case-insensitive partial match
+  });
+
+  res.json({ success: true, items });
 });
