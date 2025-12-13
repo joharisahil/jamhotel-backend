@@ -10,7 +10,8 @@ import {
   getInvoicesByRoom,
   changeRoom,
   extendStay,
-  getBookingByDate
+  getBookingByDate,
+  getRoomServiceBillForBooking
 } from "../controllers/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 
@@ -30,6 +31,7 @@ router.get("/", authorize("FRONT_OFFICE", "GM", "MD"), listBookings);
 router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
 
 router.get("/current/:roomId", authorize("FRONT_OFFICE", "GM", "MD"), getCurrentBookingForRoom );
+router.get("/orders/booking/:bookingId", getRoomServiceBillForBooking);
 
 // Checkout / finalize booking
 router.post("/:id/checkout", authorize("FRONT_OFFICE", "GM", "MD"), checkoutBooking);

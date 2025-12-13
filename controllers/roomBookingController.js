@@ -230,3 +230,32 @@ export const extendStay = asyncHandler(async (req, res) => {
 
   res.json({ success: true, message: "Stay extended successfully", booking });
 });
+
+export const getRoomServiceBillForBooking = asyncHandler(async (req, res) => {
+  const bookingId = req.params.bookingId;
+
+  const booking = await RoomBooking.findById(bookingId);
+  if (!booking) {
+    return res.json({ success: true, orders: [], summary: null });
+  }
+
+  const orders = await Order.find({
+    room_id: booking.room_id,
+    hotel_id: booking.hotel_id,
+    createdAt: {
+      $gte: new Date(booking.checkIn),
+      $lt: new Date(booking.checkOut),
+    }
+  });
+
+  const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
+  const gst = orders.reduce((s, o) => s + o.gst, 0);
+  const total = subtotal + gst;
+
+  res.json({
+    success: true,
+    orders,
+    summary: { subtotal, gst, total }
+  });
+});
+

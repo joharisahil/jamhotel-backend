@@ -172,3 +172,4 @@ export const getBookingByRoomForToday = asyncHandler(async (req, res) => {
 
   res.json({ success: true, booking });
 });
+

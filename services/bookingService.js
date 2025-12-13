@@ -321,3 +321,15 @@ export const checkoutBooking = async (bookingId, userId) => {
     throw e;
   }
 };
+
+export const getFoodOrdersForBooking = async (booking) => {
+  const checkIn = new Date(booking.checkIn);
+  const checkOut = new Date(booking.checkOut);
+
+  return Order.find({
+    room_id: booking.room_id,
+    hotel_id: booking.hotel_id,
+    status: "DELIVERED", // or include NEW/PREPARING if you want live orders
+    createdAt: { $gte: checkIn, $lt: checkOut },
+  });
+};
