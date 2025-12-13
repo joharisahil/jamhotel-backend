@@ -13,7 +13,8 @@ import {
   getBookingByDate,
   getRoomServiceBillForBooking,
   updateFoodBilling,
-  updateRoomBilling
+  updateRoomBilling,
+  getActiveRoomsToday
 } from "../controllers/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 
@@ -23,32 +24,27 @@ const router = express.Router();
 // Protect all booking routes
 router.use(protect);
 
-// Create booking - front office, GM, MD
-router.post("/", authorize("FRONT_OFFICE", "GM", "MD"), /* validate(createBookingSchema), */ createBooking);
+// Create booking
+router.post("/", authorize("FRONT_OFFICE", "GM", "MD"), createBooking);
 
-// List bookings - front office + higher
+// List bookings
 router.get("/", authorize("FRONT_OFFICE", "GM", "MD"), listBookings);
 
-// Get booking details
+// MUST PLACE FIXED ROUTES FIRST
+router.get("/current/:roomId", authorize("FRONT_OFFICE", "GM", "MD"), getCurrentBookingForRoom);
+router.get("/orders/booking/:bookingId", authorize("FRONT_OFFICE", "GM", "MD"), getRoomServiceBillForBooking);
+router.get("/by-date", authorize("FRONT_OFFICE", "GM", "MD"), getBookingByDate);
+router.get("/active-today", authorize("FRONT_OFFICE", "GM", "MD"), getActiveRoomsToday);
+
+// Dynamic routes LAST
 router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
 
-router.get("/current/:roomId", authorize("FRONT_OFFICE", "GM", "MD"), getCurrentBookingForRoom );
-router.get("/orders/booking/:bookingId", getRoomServiceBillForBooking);
-
-// Checkout / finalize booking
-router.post("/:id/checkout", authorize("FRONT_OFFICE", "GM", "MD"), checkoutBooking);
-
-// Cancel booking
-router.post("/:id/cancel", authorize("FRONT_OFFICE", "GM", "MD"), cancelBooking);
-router.get("/by-date", authorize("FRONT_OFFICE", "GM", "MD"), getBookingByDate);
-
+router.post("/:id/checkout", authorize("FRONT_OFFICE","GM","MD"), checkoutBooking);
+router.post("/:id/cancel", authorize("FRONT_OFFICE","GM","MD"), cancelBooking);
 router.patch("/:id/food-billing", authorize("FRONT_OFFICE","GM","MD"), updateFoodBilling);
 router.patch("/:id/room-billing", authorize("FRONT_OFFICE","GM","MD"), updateRoomBilling);
-// Get all invoices for a room
-router.get("/:roomId/invoices", authorize("FRONT_OFFICE", "GM", "MD"), getInvoicesByRoom);
-
-router.post("/:id/change-room", authorize("FRONT_OFFICE", "GM", "MD"), changeRoom);
-router.post("/:id/extend-stay", authorize("FRONT_OFFICE", "GM", "MD"), extendStay);
-
+router.get("/:roomId/invoices", authorize("FRONT_OFFICE","GM","MD"), getInvoicesByRoom);
+router.post("/:id/change-room", authorize("FRONT_OFFICE","GM","MD"), changeRoom);
+router.post("/:id/extend-stay", authorize("FRONT_OFFICE","GM","MD"), extendStay);
 
 export default router;

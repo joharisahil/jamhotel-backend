@@ -403,3 +403,35 @@ export const updateRoomBilling = asyncHandler(async (req, res) => {
     booking
   });
 });
+
+export const getActiveRoomsToday = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const now = new Date();
+
+  const bookings = await RoomBooking.find({
+    hotel_id,
+    status: { $in: ["OCCUPIED", "CHECKEDIN"] },
+
+    // Guest has already checked in
+    checkIn: { $lte: now },
+
+    // Guest has not checked out yet
+    checkOut: { $gt: now }
+  }).populate("room_id");
+
+  const rooms = bookings
+    .filter(b => b.room_id)   // ensure room exists
+    .map(b => ({
+      _id: b.room_id._id,
+      number: b.room_id.number,
+      type: b.room_id.type,
+      liveStatus: "OCCUPIED",
+      booking: b
+    }));
+
+  res.json({
+    success: true,
+    rooms
+  });
+});
+
