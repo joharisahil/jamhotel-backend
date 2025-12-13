@@ -1,6 +1,8 @@
 import Bill from "../models/Bill.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import RoomInvoice from "../models/RoomInvoice.js";
+import * as transactionService from "../services/transactionService.js";
+import { manualRestaurantBillSchema } from "../validators/manualRestaurantBillValidator.js";
 
 /**
  * GET /billing
@@ -135,4 +137,77 @@ export const getRoomInvoiceById = asyncHandler(async (req, res) => {
     success: true,
     bill: formatted
   });
+});
+
+export const createManualRestaurantBill = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+
+  const data = manualRestaurantBillSchema.parse(req.body);
+
+  const {
+    customerName,
+    customerPhone,
+    tableNumber,
+    items,
+    subtotal,
+    discount,
+    gst,
+    finalAmount,
+    paymentMethod
+  } = data;
+
+  // generate bill number
+  // Find last bill number safely
+  // ----------------------
+  // SAFE BILL NUMBER LOGIC
+  // ----------------------
+  const lastBill = await Bill.findOne({ hotel_id, source: "RESTAURANT" })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  let nextNumber = 1;
+
+  if (lastBill) {
+    const parsed = parseInt(lastBill.billNumber, 10);
+
+    // If parsed is valid number, increment
+    if (!isNaN(parsed)) nextNumber = parsed + 1;
+  }
+
+  // Always produce a zero-padded bill number
+  const generatedBillNumber = String(nextNumber).padStart(6, "0");
+
+  const bill = await Bill.create({
+    hotel_id,
+    billNumber: generatedBillNumber,
+    source: "RESTAURANT",
+    customerName,
+    customerPhone,
+    table_id: null,   // since manually entered
+    referenceId: null,
+    orders: [
+      {
+        order_id: null,
+        total: finalAmount,
+        items
+      }
+    ],
+    subtotal,
+    gst,
+    discount,
+    finalAmount,
+    paymentMode: (paymentMethod || "CASH").toUpperCase(),
+    createdBy: req.user._id
+  });
+
+  // also log a transaction
+  await transactionService.createTransaction(hotel_id, {
+    type: "CREDIT",
+    source: "RESTAURANT",
+    amount: finalAmount,
+    description: `Restaurant Bill #${bill.billNumber}`,
+    referenceId: bill._id
+  });
+
+  res.json({ success: true, bill });
 });
