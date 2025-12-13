@@ -1,46 +1,47 @@
 import mongoose from "mongoose";
 
 const roomInvoiceSchema = new mongoose.Schema({
-  hotel_id: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
-  bookingId: { type: mongoose.Schema.Types.ObjectId, ref: "RoomBooking", required: true },
-  room_id: { type: mongoose.Schema.Types.ObjectId, ref: "Room", required: true },
+  hotel_id: mongoose.Types.ObjectId,
+  room_id: mongoose.Types.ObjectId,
+  bookingId: mongoose.Types.ObjectId,
 
-  invoiceNumber: { type: String, required: true, unique: true },
+  invoiceNumber: String,
 
   guestName: String,
   guestPhone: String,
 
-  // ROOM CHARGES
   stayNights: Number,
   roomRate: Number,
   stayAmount: Number,
 
-   // NEW — GST BREAKUP (5% → 2.5% + 2.5%)
-  stayCGST: { type: Number, default: 0 },
-  staySGST: { type: Number, default: 0 },
-  stayGST: { type: Number, default: 0 },
-  extraServices: [{ name: String, price: Number }],
-
-  // FOOD CHARGES
-  foodOrders: [
+  extraServices: [
     {
-      order_id: mongoose.Schema.Types.ObjectId,
-      items: Array,
-      subtotal: Number,
-      gst: Number,
-      total: Number,
+      name: String,
+      price: Number,
+      days: [Number]
     }
   ],
+
+  stayCGST: Number,
+  staySGST: Number,
+  stayGST: Number,
+
+  gstEnabled: { type: Boolean, default: true },
+
+  foodOrders: Array,
   foodSubtotal: Number,
   foodGST: Number,
   foodTotal: Number,
 
-  discount: Number,
+  discountPercent: Number,
+  discountAmount: Number,
+
   totalAmount: Number,
   advancePaid: Number,
   balanceDue: Number,
 
-  createdAt: { type: Date, default: Date.now }
-});
+  actualCheckoutTime: Date   // NEW — for billing
+
+}, { timestamps: true });
 
 export default mongoose.model("RoomInvoice", roomInvoiceSchema);

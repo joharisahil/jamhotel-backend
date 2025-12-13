@@ -1,28 +1,154 @@
+// services/roomService.js
 import Room from "../models/Room.js";
 import RoomBooking from "../models/RoomBooking.js";
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+/**
+ * Utility:
+ * Determines whether two datetime ranges overlap.
+ *
+ * Overlap exists if:
+ *   existing.checkIn < requested.checkOut
+ *   AND existing.checkOut > requested.checkIn
+ *
+ * This makes checkOut TIME strictly exclusive.
+ */
+function isOverlapping(existingIn, existingOut, reqIn, reqOut) {
+  return existingIn < reqOut && existingOut > reqIn;
+}
+
+/**
+ * --------------------------
+ * GET AVAILABLE ROOMS FOR DATES (Date + Time)
+ * --------------------------
+ *
+ * Rules:
+ * ✔ A room is free if previous booking has checkout <= requested check-in.
+ * ✔ A room is only blocked if datetime overlap exists.
+ * ✔ Same-day checkout rooms should still appear as AVAILABLE
+ *    but must return metadata:
+ *    { hasSameDayCheckout: true, checkoutTime: <Date> }
+ *
+ * This method returns rooms with enriched metadata for frontend.
+ */
+export const getAvailableRoomsForDates = async (
+  hotel_id,
+  checkInDT,
+  checkOutDT,
+  roomType = null
+) => {
+  const reqIn = new Date(checkInDT);
+  const reqOut = new Date(checkOutDT);
+
+  if (isNaN(reqIn) || isNaN(reqOut) || reqIn >= reqOut) {
+    throw new Error("Invalid check-in/check-out datetime");
+  }
+
+  // 1. Fetch ALL bookings overlapping or adjacent
+  const allBookings = await RoomBooking.find({
+    hotel_id,
+    status: { $nin: ["CANCELLED"] }
+  }).select("room_id checkIn checkOut");
+
+  const blockingMap = new Map();
+  const sameDayCheckoutMap = new Map();
+
+  for (const b of allBookings) {
+    const existingIn = new Date(b.checkIn);
+    const existingOut = new Date(b.checkOut);
+
+    // If the existing checkout <= requested checkin → does NOT block the room.
+    if (existingOut <= reqIn) {
+      // Track that this room has same-day earlier checkout
+      // Only record if it's the same calendar date
+      const isSameDay =
+        existingOut.getFullYear() === reqIn.getFullYear() &&
+        existingOut.getMonth() === reqIn.getMonth() &&
+        existingOut.getDate() === reqIn.getDate();
+
+      if (isSameDay) {
+        sameDayCheckoutMap.set(String(b.room_id), existingOut);
+      }
+      continue;
+    }
+
+    // If existing booking overlaps → block the room
+    if (isOverlapping(existingIn, existingOut, reqIn, reqOut)) {
+      blockingMap.set(String(b.room_id), existingOut);
+    }
+  }
+
+  // 2. Fetch all rooms for this hotel
+  const roomQuery = { hotel_id };
+  if (roomType) roomQuery.type = roomType;
+
+  const rooms = await Room.find(roomQuery).sort({ number: 1 });
+
+  // 3. Build final result array with metadata
+  const result = rooms
+    .filter(r => !blockingMap.has(String(r._id)))  // remove fully blocked rooms
+    .map(r => {
+      const rid = String(r._id);
+
+      return {
+        ...r.toObject(),
+        available: true,
+        hasSameDayCheckout: sameDayCheckoutMap.has(rid),
+        checkoutTime: sameDayCheckoutMap.get(rid) || null
+      };
+    });
+
+  return result;
+};
+
+/**
+ * BASIC ROOM CRUD SERVICES
+ */
+
 export const createRoom = async (hotel_id, payload) => {
   const room = await Room.create({ hotel_id, ...payload });
-    // Auto-generate QR URL
   const qrUrl = `${process.env.QR_URL}/menu/qr/room/${room._id}/${hotel_id}`;
 
   room.qrUrl = qrUrl;
   room.qrCodeId = `ROOM-${room._id}`;
-
   await room.save();
-  
+
   return room;
 };
 
 export const listRooms = async (hotel_id, query = {}) => {
-  return Room.find({ hotel_id, ...query });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  // Find bookings active today
+  const activeBookings = await RoomBooking.find({
+    hotel_id,
+    status: { $in: ["OCCUPIED", "CHECKEDIN"] },
+    checkIn: { $lt: tomorrow },
+    checkOut: { $gt: today }
+  }).select("room_id");
+
+  const occupiedTodayIds = new Set(activeBookings.map(b => String(b.room_id)));
+
+  const rooms = await Room.find({ hotel_id, ...query });
+
+  return rooms.map(r => ({
+    ...r.toObject(),
+    liveStatus: occupiedTodayIds.has(String(r._id)) ? "OCCUPIED" : "AVAILABLE"
+  }));
 };
+
 
 export const getRoomById = async (id, hotel_id) => {
   return Room.findOne({ _id: id, hotel_id });
 };
 
-export const updateRoom = async (id, payload) => Room.findByIdAndUpdate(id, payload, { new: true });
+export const updateRoom = async (id, payload) =>
+  Room.findByIdAndUpdate(id, payload, { new: true });
 
 export const updateRoomById = async (id, hotel_id, payload) => {
   return Room.findOneAndUpdate(
@@ -37,83 +163,65 @@ export const deleteRoomById = async (id, hotel_id) => {
 };
 
 export const getRoomTypes = async (hotel_id) => {
-  return await Room.distinct("type", { hotel_id });
+  return Room.distinct("type", { hotel_id });
 };
 
 export const getRoomsByType = async (hotel_id, type) => {
-  return await Room.find({ hotel_id, type }).select("_id number type");
+  return Room.find({ hotel_id, type }).select("_id number type");
 };
 
 export const getRoomPlans = async (hotel_id, roomId) => {
   const room = await Room.findOne({ _id: roomId, hotel_id });
-
   if (!room) return null;
 
-  let formattedPlans = [];
+  const formatted = [];
 
-  room.plans.forEach((p) => {
+  room.plans.forEach(p => {
     if (p.singlePrice) {
-      formattedPlans.push({
+      formatted.push({
         key: `${p.code}_SINGLE`,
         label: `${p.name} - Single`,
         price: p.singlePrice,
         code: p.code,
-        type: "SINGLE",
+        type: "SINGLE"
       });
     }
 
     if (p.doublePrice) {
-      formattedPlans.push({
+      formatted.push({
         key: `${p.code}_DOUBLE`,
         label: `${p.name} - Double`,
         price: p.doublePrice,
         code: p.code,
-        type: "DOUBLE",
+        type: "DOUBLE"
       });
     }
   });
 
-  return formattedPlans;
+  return formatted;
 };
 
-// services/roomService.js  (replace the function implementation)
-export const getAvailableRoomsForDates = async (hotel_id, checkIn, checkOut, roomType = null) => {
-  // normalize dates from input (assumes YYYY-MM-DD input)
-  // treat checkOut as EXCLUSIVE: a booking that checks out on day X
-  // does not conflict with a new booking that checks in on day X.
-  const start = new Date(checkIn);
-  const end = new Date(checkOut);
+export const getAllRoomsWithBookingStatus = async (hotel_id, checkInDT, checkOutDT) => {
+  const reqIn = new Date(checkInDT);
+  const reqOut = new Date(checkOutDT);
 
-  // Defensive: ensure valid dates
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
-    throw new Error("Invalid date range");
-  }
-
-  // Overlap condition (strict):
-  // existingBooking.checkIn < newEnd  AND existingBooking.checkOut > newStart
-  // This makes checkOut exclusive (no overlap when existing.checkOut === newStart)
-  const overlappingBookings = await RoomBooking.find({
+  const bookings = await RoomBooking.find({
     hotel_id,
-    // exclude cancelled bookings only
     status: { $nin: ["CANCELLED"] },
-    $and: [
-      { checkIn: { $lt: end } },
-      { checkOut: { $gt: start } }
-    ]
-  }).select("room_id");
+    checkIn: { $lt: reqOut },
+    checkOut: { $gt: reqIn }
+  });
 
-  const occupiedRoomIds = overlappingBookings.map(b => String(b.room_id));
+  const bookingMap = new Map();
+  bookings.forEach(b => {
+    bookingMap.set(String(b.room_id), b._id);
+  });
 
-  // Query rooms excluding the occupiedRoomIds
-  const query = {
-    hotel_id,
-    _id: { $nin: occupiedRoomIds }
-  };
+  const rooms = await Room.find({ hotel_id }).sort({ number: 1 });
 
-  if (roomType) query.type = roomType;
-
-  // NOTE: intentionally NOT filtering by current Room.status,
-  // because a room may be currently OCCUPIED but available in the requested future range.
-  return Room.find(query).sort({ number: 1 });
+  return rooms.map(r => ({
+    ...r.toObject(),
+    isBooked: bookingMap.has(String(r._id)),
+    bookingId: bookingMap.get(String(r._id)) || null,
+  }));
 };
-

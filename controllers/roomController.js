@@ -1,117 +1,149 @@
+// controllers/roomController.js
 import { asyncHandler } from "../utils/asyncHandler.js";
 import * as roomService from "../services/roomService.js";
-import { createRoomSchema } from "../validators/roomValidator.js";
-import Room from "../models/Room.js"; 
+import Room from "../models/Room.js";
 
-export const createRoom = asyncHandler(async (req,res) => {
-  const payload = createRoomSchema.parse(req.body);
+/**
+ * CREATE ROOM
+ */
+export const createRoom = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
+  const payload = req.body;
+
   const room = await roomService.createRoom(hotel_id, payload);
-  res.json({ success:true, room });
+  res.json({ success: true, room });
 });
 
-export const listRooms = asyncHandler(async (req,res) => {
+/**
+ * LIST ROOMS
+ */
+export const listRooms = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
   const rooms = await roomService.listRooms(hotel_id);
-  res.json({ success:true, rooms });
+  res.json({ success: true, rooms });
 });
 
+/**
+ * GET ROOM
+ */
 export const getRoom = asyncHandler(async (req, res) => {
-  const roomId = req.params.id;
   const hotel_id = req.user.hotel_id;
 
-  const room = await roomService.getRoomById(roomId, hotel_id);
-
-  if (!room) {
+  const room = await roomService.getRoomById(req.params.id, hotel_id);
+  if (!room)
     return res.status(404).json({ success: false, message: "Room not found" });
-  }
 
   res.json({ success: true, room });
 });
 
+/**
+ * UPDATE ROOM
+ */
 export const updateRoom = asyncHandler(async (req, res) => {
-  const roomId = req.params.id;
   const hotel_id = req.user.hotel_id;
 
-  const payload = req.body; // if needed, validate with zod
+  const updated = await roomService.updateRoomById(
+    req.params.id,
+    hotel_id,
+    req.body
+  );
 
-  const updatedRoom = await roomService.updateRoomById(roomId, hotel_id, payload);
-
-  if (!updatedRoom) {
+  if (!updated)
     return res.status(404).json({ success: false, message: "Room not found" });
-  }
 
-  res.json({ success: true, room: updatedRoom });
+  res.json({ success: true, room: updated });
 });
 
+/**
+ * DELETE ROOM
+ */
 export const deleteRoom = asyncHandler(async (req, res) => {
-  const roomId = req.params.id;
   const hotel_id = req.user.hotel_id;
 
-  const deletedRoom = await roomService.deleteRoomById(roomId, hotel_id);
+  const deleted = await roomService.deleteRoomById(
+    req.params.id,
+    hotel_id
+  );
 
-  if (!deletedRoom) {
+  if (!deleted)
     return res.status(404).json({ success: false, message: "Room not found" });
-  }
 
-  res.json({ success: true, message: "Room deleted successfully" });
+  res.json({
+    success: true,
+    message: "Room deleted successfully",
+  });
 });
 
+/**
+ * GET ROOM TYPES
+ */
 export const getRoomTypes = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
 
   const types = await roomService.getRoomTypes(hotel_id);
-
   res.json({ success: true, types });
 });
 
+/**
+ * GET ROOMS BY TYPE
+ */
 export const getRoomsByType = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { type } = req.params;
 
-  const rooms = await roomService.getRoomsByType(hotel_id, type);
+  const rooms = await roomService.getRoomsByType(
+    hotel_id,
+    req.params.type
+  );
 
   res.json({ success: true, rooms });
 });
 
+/**
+ * GET PLANS FOR A ROOM
+ */
 export const getRoomPlans = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { roomId } = req.params;
 
-  const plans = await roomService.getRoomPlans(hotel_id, roomId);
+  const plans = await roomService.getRoomPlans(
+    hotel_id,
+    req.params.roomId
+  );
 
-  if (!plans) {
+  if (!plans)
     return res.status(404).json({ success: false, message: "Room not found" });
-  }
 
   res.json({ success: true, plans });
 });
 
+/**
+ * LIST AVAILABLE ROOMS (simple filter)
+ */
 export const listAvailableRooms = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { type } = req.query;
 
-  const filter = {
+  const rooms = await Room.find({
     hotel_id,
-    status: "AVAILABLE"
-  };
-
-  if (type) {
-    filter.type = type;
-  }
-
-  const rooms = await Room.find(filter).sort({ number: 1 });
+    status: "AVAILABLE",
+    ...(req.query.type && { type: req.query.type }),
+  }).sort({ number: 1 });
 
   res.json({ success: true, rooms });
 });
 
+/**
+ * GET AVAILABLE ROOMS FOR DATETIME RANGE
+ * Main endpoint used in booking flow
+ */
 export const getAvailableRooms = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
+
   const { checkIn, checkOut, type } = req.query;
 
-  if (!checkIn || !checkOut) {
-    return res.status(400).json({ success: false, message: "checkIn and checkOut are required" });
-  }
+  if (!checkIn || !checkOut)
+    return res.status(400).json({
+      success: false,
+      message: "checkIn and checkOut datetime are required",
+    });
 
   const rooms = await roomService.getAvailableRoomsForDates(
     hotel_id,
@@ -123,3 +155,11 @@ export const getAvailableRooms = asyncHandler(async (req, res) => {
   res.json({ success: true, rooms });
 });
 
+export const getAllRoomsByDate = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { checkIn, checkOut } = req.query;
+
+  const rooms = await roomService.getAllRoomsWithBookingStatus(hotel_id, checkIn, checkOut);
+
+  res.json({ success: true, rooms });
+});

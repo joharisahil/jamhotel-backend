@@ -1,54 +1,67 @@
 // controllers/roomBookingController.js
 import { asyncHandler } from "../utils/asyncHandler.js";
 import * as bookingService from "../services/bookingService.js";
+import * as roomService from "../services/roomService.js";
 import RoomBooking from "../models/RoomBooking.js";
-import Room from "../models/Room.js";
-import { createBookingSchema } from "../validators/bookingValidator.js";
 import RoomInvoice from "../models/RoomInvoice.js";
+import Room from "../models/Room.js";
 import Order from "../models/Order.js";
 
 /**
- * Create a new room booking (Front Office)
- * Body validated by createBookingSchema
+ * CREATE BOOKING (Front Office)
+ * Now supports:
+ *  ✔ datetime check-in & check-out
+ *  ✔ gstEnabled
+ *  ✔ per-day extras
+ *  ✔ returns discountAmount
  */
 export const createBooking = asyncHandler(async (req, res) => {
-  // parse/validate input
-  const payload = createBookingSchema.parse(req.body);
-
-  // ensure hotel_id comes from authenticated user (tenant-safe)
   const hotel_id = req.user.hotel_id;
+  const payload = req.body;
 
-  // call service
-  const booking = await bookingService.createBooking({ hotel_id, ...payload });
+  const booking = await bookingService.createBooking({
+    hotel_id,
+    ...payload,
+  });
 
-  res.status(201).json({ success: true, booking });
+  res.status(201).json({
+    success: true,
+    booking,
+  });
 });
 
 /**
- * Get single booking
+ * GET SINGLE BOOKING
  */
 export const getBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
   const booking = await RoomBooking.findById(id).populate("room_id");
-  if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-  // tenant check
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
   if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
     return res.status(403).json({ success: false, message: "Forbidden" });
   }
+
   res.json({ success: true, booking });
 });
 
 /**
- * List bookings (with optional filters)
+ * LIST BOOKINGS
  */
 export const listBookings = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
   const { status, from, to, page = 1, limit = 50 } = req.query;
+
   const q = { hotel_id };
   if (status) q.status = status;
-  if (from || to) q.checkIn = {};
-  if (from) q.checkIn.$gte = new Date(from);
-  if (to) q.checkIn.$lte = new Date(to);
+
+  if (from || to) {
+    q.checkIn = {};
+    if (from) q.checkIn.$gte = new Date(from);
+    if (to) q.checkIn.$lte = new Date(to);
+  }
 
   const bookings = await RoomBooking.find(q)
     .populate("room_id")
@@ -60,73 +73,91 @@ export const listBookings = asyncHandler(async (req, res) => {
 });
 
 /**
- * Checkout booking (finalize & free the room)
+ * CHECKOUT BOOKING — uses actual checkout time
  */
 export const checkoutBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
   const invoice = await bookingService.checkoutBooking(id, req.user._id);
+
   res.json({ success: true, invoice });
 });
 
 /**
- * Cancel booking
+ * CANCEL BOOKING
  */
 export const cancelBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
   const booking = await RoomBooking.findById(id);
-  if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
     return res.status(403).json({ success: false, message: "Forbidden" });
-  }
 
   booking.status = "CANCELLED";
   await booking.save();
 
-  // free the room if currently booked
   try {
     await Room.findByIdAndUpdate(booking.room_id, { status: "AVAILABLE" });
-  } catch (e) {
-    // non-fatal
-    console.warn("Failed to update room status on cancel:", e.message);
-  }
+  } catch (e) { }
 
   res.json({ success: true, booking });
 });
 
+/**
+ * CURRENT BOOKING FOR A ROOM
+ */
 export const getCurrentBookingForRoom = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { roomId } = req.params;
+
+  const booking = await RoomBooking.findOne({
+    hotel_id,
+    room_id: req.params.roomId,
+    status: { $in: ["OCCUPIED", "CHECKEDIN"] },
+  }).populate("room_id");
+
+  res.json({ success: true, booking: booking || null });
+});
+export const getBookingByDate = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { roomId, checkIn, checkOut } = req.query;
+
+  if (!roomId || !checkIn || !checkOut)
+    return res.status(400).json({ success: false, message: "Missing parameters" });
+
+  const reqIn = new Date(checkIn);
+  const reqOut = new Date(checkOut);
 
   const booking = await RoomBooking.findOne({
     hotel_id,
     room_id: roomId,
-    status: { $in: ["OCCUPIED", "CHECKEDIN"] }
+    status: { $nin: ["CANCELLED"] },
+    checkIn: { $lt: reqOut },
+    checkOut: { $gt: reqIn }
   }).populate("room_id");
 
-  if (!booking) {
-    return res.json({ success: true, booking: null });
-  }
-
-  res.json({ success: true, booking });
+  res.json({ success: true, booking: booking || null });
 });
 
+
+/**
+ * ROOM INVOICES
+ */
 export const getInvoicesByRoom = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { roomId } = req.params;
 
   const invoices = await RoomInvoice.find({
     hotel_id,
-    room_id: roomId
+    room_id: req.params.roomId,
   }).sort({ createdAt: -1 });
 
-  res.json({
-    success: true,
-    invoices
-  });
+  res.json({ success: true, invoices });
 });
 
 /**
- * Change Room
+ * CHANGE ROOM — supports transfer of pending food orders
  */
 export const changeRoom = asyncHandler(async (req, res) => {
   const { id } = req.params; // booking ID
@@ -136,45 +167,34 @@ export const changeRoom = asyncHandler(async (req, res) => {
   if (!booking)
     return res.status(404).json({ success: false, message: "Booking not found" });
 
-  // Permission check
-  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
     return res.status(403).json({ success: false, message: "Forbidden" });
-  }
 
   const oldRoomId = booking.room_id._id;
 
-  // Load new room
   const newRoom = await Room.findById(newRoomId);
   if (!newRoom)
     return res.status(404).json({ success: false, message: "New room not found" });
 
-  // 🔥 Ensure new room is same type
-  if (newRoom.type !== booking.room_id.type) {
+  if (newRoom.type !== booking.room_id.type)
     return res.status(400).json({
       success: false,
-      message: "Room change allowed only to same room type"
+      message: "Room change allowed only within same room type",
     });
-  }
 
-  // 🔥 Ensure new room is available
-  if (newRoom.status !== "AVAILABLE") {
+  if (newRoom.status !== "AVAILABLE")
     return res.status(400).json({
       success: false,
-      message: "Selected room is not available"
+      message: "Selected room is not available",
     });
-  }
 
-  // Update booking
   booking.room_id = newRoomId;
   await booking.save();
 
-  // Free old room
   await Room.findByIdAndUpdate(oldRoomId, { status: "AVAILABLE" });
-
-  // Occupy new room
   await Room.findByIdAndUpdate(newRoomId, { status: "OCCUPIED" });
 
-  // 👉 Transfer all PENDING food orders to new room
+  // Move all pending unpaid food orders
   await Order.updateMany(
     {
       room_id: oldRoomId,
@@ -192,25 +212,21 @@ export const changeRoom = asyncHandler(async (req, res) => {
 });
 
 /**
- * Extend Stay
+ * EXTEND STAY
  */
 export const extendStay = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { newCheckOut } = req.body;
 
   const booking = await RoomBooking.findById(id);
-  if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
 
-  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
     return res.status(403).json({ success: false, message: "Forbidden" });
-  }
 
   booking.checkOut = new Date(newCheckOut);
   await booking.save();
 
-  res.json({
-    success: true,
-    message: "Stay extended successfully",
-    booking
-  });
+  res.json({ success: true, message: "Stay extended successfully", booking });
 });
