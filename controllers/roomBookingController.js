@@ -249,13 +249,133 @@ export const getRoomServiceBillForBooking = asyncHandler(async (req, res) => {
   });
 
   const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
-  const gst = orders.reduce((s, o) => s + o.gst, 0);
-  const total = subtotal + gst;
+  const gstRaw = orders.reduce((s, o) => s + o.gst, 0);
+  const grossTotal = subtotal + gstRaw;
 
-  res.json({
+  // Apply discount
+  const discountPercent = booking.foodDiscount || 0;
+  const discountAmount = +((grossTotal * discountPercent) / 100).toFixed(2);
+
+  // Apply GST enabled/disabled
+  const finalGST = booking.foodGSTEnabled ? gstRaw : 0;
+
+  // If GST is disabled, subtract it from total
+  const finalTotal = +(grossTotal - discountAmount - (booking.foodGSTEnabled ? 0 : gstRaw)).toFixed(2);
+
+  return res.json({
     success: true,
     orders,
-    summary: { subtotal, gst, total }
+    summary: {
+      subtotal,
+      discountPercent,
+      discountAmount,
+      gst: finalGST,
+      total: finalTotal,
+      gstEnabled: booking.foodGSTEnabled,
+    }
   });
 });
 
+
+export const updateFoodBilling = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { foodDiscount, foodGSTEnabled } = req.body;
+
+  const booking = await RoomBooking.findById(id);
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  // Get food orders inside stay duration
+  const orders = await Order.find({
+    hotel_id: booking.hotel_id,
+    room_id: booking.room_id,
+    createdAt: { $gte: booking.checkIn, $lt: booking.checkOut },
+    paymentStatus: "PENDING"
+  });
+
+  const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
+  const gst = orders.reduce((s, o) => s + o.gst, 0);
+  const grossTotal = subtotal + gst;
+
+  // Apply discount only on gross total
+  const discountPercent = Number(foodDiscount || 0);
+  const discountAmount = +((grossTotal * discountPercent) / 100).toFixed(2);
+
+  // Remove GST entirely if disabled
+  const finalGST = foodGSTEnabled ? gst : 0;
+
+  const finalTotal = +(grossTotal - discountAmount - (foodGSTEnabled ? 0 : gst)).toFixed(2);
+
+  booking.foodDiscount = discountPercent;
+  booking.foodDiscountAmount = discountAmount;
+  booking.foodGSTEnabled = foodGSTEnabled;
+
+  booking.foodTotals = {
+    subtotal,
+    gst: finalGST,
+    total: finalTotal
+  };
+
+  await booking.save();
+
+  res.json({
+    success: true,
+    booking,
+    summary: booking.foodTotals
+  });
+});
+
+export const updateRoomBilling = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { discount, gstEnabled } = req.body;
+
+  const booking = await RoomBooking.findById(id).populate("room_id");
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  // Recompute stay total
+  const nights = Math.max(
+    1,
+    Math.ceil((new Date(booking.checkOut) - new Date(booking.checkIn)) / (1000 * 60 * 60 * 24))
+  );
+
+  const planCode = booking.planCode;
+  const isSingle = planCode.includes("SINGLE");
+  const plan = booking.room_id.plans.find(p => p.code === planCode.split("_")[0]);
+  const rate = isSingle ? plan.singlePrice : plan.doublePrice;
+
+  const stayAmount = rate * nights;
+  const extraAmount = (booking.addedServices || []).reduce((s, e) => s + Number(e.price || 0), 0);
+
+  const base = stayAmount + extraAmount;
+
+  // GST
+  let cgst = gstEnabled ? +(base * 0.025).toFixed(2) : 0;
+  let sgst = gstEnabled ? +(base * 0.025).toFixed(2) : 0;
+
+  const gross = base + cgst + sgst;
+
+  const discountPercent = Number(discount || 0);
+  const discountAmount = +((gross * discountPercent) / 100).toFixed(2);
+
+  const roomTotal = +(gross - discountAmount).toFixed(2);
+
+  booking.gstEnabled = gstEnabled;
+  booking.discount = discountPercent;
+  booking.discountAmount = discountAmount;
+
+  booking.taxable = base;
+  booking.cgst = cgst;
+  booking.sgst = sgst;
+
+  // Balance update
+  const foodTotal = booking.foodTotals?.total || 0;
+  booking.balanceDue = +(roomTotal + foodTotal - booking.advancePaid).toFixed(2);
+
+  await booking.save();
+
+  res.json({
+    success: true,
+    booking
+  });
+});

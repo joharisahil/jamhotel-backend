@@ -237,5 +237,5 @@ export const getActiveBookingForToday = async (roomId, hotelId) => {
     status: { $nin: ["CANCELLED", "CHECKED_OUT"] },
     checkIn: { $lte: endOfDay },
     checkOut: { $gt: startOfDay }
-  });
+  }).populate("room_id");
 };

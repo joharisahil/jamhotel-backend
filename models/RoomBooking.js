@@ -1,3 +1,4 @@
+// models/RoomBooking.js
 import mongoose from "mongoose";
 
 const idProofSchema = new mongoose.Schema({
@@ -13,7 +14,13 @@ const idProofSchema = new mongoose.Schema({
 const addedServiceSchema = new mongoose.Schema({
   name: String,
   price: Number,
-  days: [Number]     // example: [1], [1,2], [1,2,3]
+  days: [Number]
+}, { _id: false });
+
+const foodTotalsSchema = new mongoose.Schema({
+  subtotal: { type: Number, default: 0 },
+  gst: { type: Number, default: 0 },
+  total: { type: Number, default: 0 },
 }, { _id: false });
 
 const roomBookingSchema = new mongoose.Schema({
@@ -24,16 +31,17 @@ const roomBookingSchema = new mongoose.Schema({
   guestPhone: String,
   guestEmail: String,
 
-  // Date + Time included
   checkIn: { type: Date, required: true },
   checkOut: { type: Date, required: true },
 
+  // ROOM GST
   gstEnabled: { type: Boolean, default: true },
 
   planCode: String,
   adults: Number,
   children: Number,
 
+  // ROOM discount
   discount: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
 
@@ -41,11 +49,19 @@ const roomBookingSchema = new mongoose.Schema({
   cgst: Number,
   sgst: Number,
 
+  // FOOD discount
+  foodDiscount: { type: Number, default: 0 },          // %
+  foodDiscountAmount: { type: Number, default: 0 },     // ₹
+  foodGSTEnabled: { type: Boolean, default: true },
+
+  foodTotals: { type: foodTotalsSchema, default: {} },
+
   guestIds: [idProofSchema],
 
   addedServices: [addedServiceSchema],
 
   status: { type: String, default: "OCCUPIED" },
+
   advancePaid: { type: Number, default: 0 },
   balanceDue: { type: Number, default: 0 }
 
