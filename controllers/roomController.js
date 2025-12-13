@@ -163,3 +163,12 @@ export const getAllRoomsByDate = asyncHandler(async (req, res) => {
 
   res.json({ success: true, rooms });
 });
+
+export const getBookingByRoomForToday = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { roomId } = req.params;
+
+  const booking = await roomService.getActiveBookingForToday(roomId, hotel_id);
+
+  res.json({ success: true, booking });
+});

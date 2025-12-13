@@ -225,3 +225,17 @@ export const getAllRoomsWithBookingStatus = async (hotel_id, checkInDT, checkOut
     bookingId: bookingMap.get(String(r._id)) || null,
   }));
 };
+
+export const getActiveBookingForToday = async (roomId, hotelId) => {
+  const today = new Date();
+  const startOfDay = new Date(today.setHours(0,0,0,0));
+  const endOfDay = new Date(today.setHours(23,59,59,999));
+
+  return RoomBooking.findOne({
+    room_id: roomId,
+    hotel_id: hotelId,
+    status: { $nin: ["CANCELLED", "CHECKED_OUT"] },
+    checkIn: { $lte: endOfDay },
+    checkOut: { $gt: startOfDay }
+  });
+};
