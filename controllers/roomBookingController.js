@@ -239,39 +239,63 @@ export const getRoomServiceBillForBooking = asyncHandler(async (req, res) => {
     return res.json({ success: true, orders: [], summary: null });
   }
 
-  const orders = await Order.find({
+  const checkIn = new Date(booking.checkIn);
+  const checkOut = new Date(booking.checkOut);
+
+  /* -----------------------------------------
+   * 1️⃣ OLD LOGIC — QR orders + Room service orders
+   *     Must stay because they are inside stay window
+   * ----------------------------------------- */
+  const qrAndRoomOrders = await Order.find({
     room_id: booking.room_id,
     hotel_id: booking.hotel_id,
-    createdAt: {
-      $gte: new Date(booking.checkIn),
-      $lt: new Date(booking.checkOut),
-    }
+    createdAt: { $gte: checkIn, $lt: checkOut }
   });
 
-  const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
-  const gstRaw = orders.reduce((s, o) => s + o.gst, 0);
+  /* -----------------------------------------
+   * 2️⃣ NEW LOGIC — Transferred restaurant bills
+   *     (orders not placed through QR but transferred manually)
+   *     They have: 
+   *     - paymentStatus: "PENDING"
+   *     - status: "DELIVERED"
+   * ----------------------------------------- */
+  const transferredOrders = await Order.find({
+    room_id: booking.room_id,
+    hotel_id: booking.hotel_id,
+    paymentStatus: "PENDING",
+    status: "DELIVERED",
+    createdAt: { $not: { $gte: checkIn, $lt: checkOut } } // avoid duplicating same orders
+  });
+
+  /* -----------------------------------------
+   * 3️⃣ MERGE BOTH WITHOUT DUPLICATES
+   * ----------------------------------------- */
+  const allOrders = [...qrAndRoomOrders, ...transferredOrders];
+
+  /* -----------------------------------------
+   * 4️⃣ CALCULATE SUMMARY
+   * ----------------------------------------- */
+  const subtotal = allOrders.reduce((s, o) => s + o.subtotal, 0);
+  const gstRaw = allOrders.reduce((s, o) => s + o.gst, 0);
   const grossTotal = subtotal + gstRaw;
 
-  // Apply discount
   const discountPercent = booking.foodDiscount || 0;
   const discountAmount = +((grossTotal * discountPercent) / 100).toFixed(2);
 
-  // Apply GST enabled/disabled
   const finalGST = booking.foodGSTEnabled ? gstRaw : 0;
 
-  // If GST is disabled, subtract it from total
   const finalTotal = +(grossTotal - discountAmount - (booking.foodGSTEnabled ? 0 : gstRaw)).toFixed(2);
 
   return res.json({
     success: true,
-    orders,
+    orders: allOrders,
     summary: {
       subtotal,
       discountPercent,
       discountAmount,
       gst: finalGST,
       total: finalTotal,
-      gstEnabled: booking.foodGSTEnabled,
+      gstEnabled: booking.foodGSTEnabled
     }
   });
 });

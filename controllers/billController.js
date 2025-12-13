@@ -3,6 +3,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import RoomInvoice from "../models/RoomInvoice.js";
 import * as transactionService from "../services/transactionService.js";
 import { manualRestaurantBillSchema } from "../validators/manualRestaurantBillValidator.js";
+import RoomBooking from "../models/RoomBooking.js";
+import Order from "../models/Order.js";
 
 /**
  * GET /billing
@@ -210,4 +212,51 @@ export const createManualRestaurantBill = asyncHandler(async (req, res) => {
   });
 
   res.json({ success: true, bill });
+});
+
+export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { bookingId, items, subtotal, discount, gst, finalAmount } = req.body;
+
+  const booking = await RoomBooking.findOne({
+    _id: bookingId,
+    hotel_id,
+    status: { $in: ["OCCUPIED", "CHECKEDIN"] }
+  });
+
+  if (!booking) {
+    return res.status(404).json({
+      success: false,
+      message: "Active booking not found"
+    });
+  }
+
+  // Convert restaurant items → Order items
+  const orderItems = items.map(i => ({
+    item_id: null,
+    name: i.name,
+    size: i.variant.toUpperCase(),
+    qty: i.qty,
+    unitPrice: i.price,
+    totalPrice: i.total
+  }));
+
+  const order = await Order.create({
+    hotel_id,
+    room_id: booking.room_id,
+    items: orderItems,
+    subtotal,
+    discount,
+    gst,
+    total: finalAmount,
+    status: "DELIVERED",
+    paymentStatus: "PENDING"
+  });
+
+  return res.json({
+    success: true,
+    message: "Food bill transferred to room",
+    booking,
+    order
+  });
 });
