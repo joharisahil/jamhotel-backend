@@ -78,7 +78,7 @@ export const listBookings = asyncHandler(async (req, res) => {
 export const checkoutBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const invoice = await bookingService.checkoutBooking(id, req.user._id);
+  const invoice = await bookingService.checkoutBooking(id, req.user._id, req.body);
 
   res.json({ success: true, invoice });
 });
@@ -111,15 +111,19 @@ export const cancelBooking = asyncHandler(async (req, res) => {
  */
 export const getCurrentBookingForRoom = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
+  const now = new Date();
 
   const booking = await RoomBooking.findOne({
     hotel_id,
     room_id: req.params.roomId,
-    status: { $in: ["OCCUPIED", "CHECKEDIN"] },
+    status: { $nin: ["CANCELLED", "CHECKEDOUT"] },
+    checkIn: { $lte: now },
+    checkOut: { $gt: now }
   }).populate("room_id");
 
   res.json({ success: true, booking: booking || null });
 });
+
 export const getBookingByDate = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
   const { roomId, checkIn, checkOut } = req.query;
@@ -129,6 +133,7 @@ export const getBookingByDate = asyncHandler(async (req, res) => {
 
   const reqIn = new Date(checkIn);
   const reqOut = new Date(checkOut);
+  const now = new Date();
 
   const booking = await RoomBooking.findOne({
     hotel_id,
@@ -138,9 +143,29 @@ export const getBookingByDate = asyncHandler(async (req, res) => {
     checkOut: { $gt: reqIn }
   }).populate("room_id");
 
-  res.json({ success: true, booking: booking || null });
-});
+  if (!booking) {
+    return res.json({ success: true, booking: null });
+  }
 
+  // ❗ HARD FIX: if booking is already CHECKEDOUT AND checkout time < NOW → DO NOT BLOCK
+  if (booking.status === "CHECKEDOUT" && new Date(booking.checkOut) <= now) {
+    return res.json({ success: true, booking: null });
+  }
+
+  // ❗ SAME-DAY CHECKOUT RULE:
+  // if booking ends today AND checkout < now → treat as free
+  const checkoutDT = new Date(booking.checkOut);
+  const sameDay =
+    checkoutDT.getFullYear() === reqIn.getFullYear() &&
+    checkoutDT.getMonth() === reqIn.getMonth() &&
+    checkoutDT.getDate() === reqIn.getDate();
+
+  if (sameDay && checkoutDT <= now) {
+    return res.json({ success: true, booking: null });
+  }
+
+  return res.json({ success: true, booking });
+});
 
 /**
  * ROOM INVOICES

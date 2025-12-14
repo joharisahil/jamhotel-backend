@@ -31,6 +31,7 @@ export const createBooking = async ({
   adults = 1,
   children = 0,
   advancePaid = 0,
+  advancePaymentMode = "CASH",
   discount = 0,
   guestIds = [],
   addedServices = [],
@@ -111,6 +112,7 @@ export const createBooking = async ({
 
   const finalTotal = +(taxable + cgst + sgst).toFixed(2);
   const balanceDue = Math.max(0, +(finalTotal - Number(advancePaid || 0)).toFixed(2));
+  advancePaymentMode = rest.advancePaymentMode || advancePaymentMode;
 
   // 9) Create booking
   const bookingPayload = {
@@ -123,6 +125,7 @@ export const createBooking = async ({
     adults,
     children,
     advancePaid: Number(advancePaid || 0),
+    advancePaymentMode,
     discount: discountPercent,
     discountAmount,
     taxable,
@@ -161,7 +164,7 @@ export const createBooking = async ({
  * - includes food orders (paymentStatus:PENDING && status:DELIVERED) in invoice, marks them PAID
  * - creates RoomInvoice, updates booking (CHECKEDOUT), frees room, creates transaction
  */
-export const checkoutBooking = async (bookingId, userId) => {
+export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -235,6 +238,20 @@ export const checkoutBooking = async (bookingId, userId) => {
     // Remaining balance considering advancePaid on booking
     const balanceDue = +(finalAmount - (booking.advancePaid || 0)).toFixed(2);
 
+    let updatedBalance = balanceDue;
+
+    if (finalPaymentData.finalPaymentReceived) {
+      updatedBalance = 0;
+
+      booking.finalPaymentReceived = true;
+      booking.finalPaymentMode =
+        finalPaymentData.finalPaymentMode || "CASH";
+
+      // Auto-pay full remaining balance
+      booking.finalPaymentAmount = balanceDue;
+    }
+
+
     const invoiceNumber = "ROOM-" + Date.now();
 
     // 4) Create invoice document (inside session)
@@ -275,7 +292,11 @@ export const checkoutBooking = async (bookingId, userId) => {
 
       totalAmount: finalAmount,
       advancePaid: booking.advancePaid,
-      balanceDue,
+      balanceDue: updatedBalance,
+
+      finalPaymentReceived: booking.finalPaymentReceived,
+      finalPaymentMode: booking.finalPaymentMode,
+      finalPaymentAmount: booking.finalPaymentAmount,
 
       actualCheckoutTime
     };
@@ -293,7 +314,7 @@ export const checkoutBooking = async (bookingId, userId) => {
 
     // 6) Update booking: status + balanceDue + actual checkOut (store actual check out to booking.checkOut so record shows actual)
     booking.status = "CHECKEDOUT";
-    booking.balanceDue = balanceDue;
+    booking.balanceDue = updatedBalance;
     booking.checkOut = actualCheckoutTime; // store real checkout on booking for record (important)
     await booking.save({ session });
 

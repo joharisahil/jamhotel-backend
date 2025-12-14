@@ -1,4 +1,3 @@
-// models/RoomBooking.js
 import mongoose from "mongoose";
 
 const idProofSchema = new mongoose.Schema({
@@ -34,14 +33,12 @@ const roomBookingSchema = new mongoose.Schema({
   checkIn: { type: Date, required: true },
   checkOut: { type: Date, required: true },
 
-  // ROOM GST
   gstEnabled: { type: Boolean, default: true },
 
   planCode: String,
   adults: Number,
   children: Number,
 
-  // ROOM discount
   discount: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
 
@@ -49,9 +46,8 @@ const roomBookingSchema = new mongoose.Schema({
   cgst: Number,
   sgst: Number,
 
-  // FOOD discount
-  foodDiscount: { type: Number, default: 0 },          // %
-  foodDiscountAmount: { type: Number, default: 0 },     // ₹
+  foodDiscount: { type: Number, default: 0 },
+  foodDiscountAmount: { type: Number, default: 0 },
   foodGSTEnabled: { type: Boolean, default: true },
 
   foodTotals: { type: foodTotalsSchema, default: {} },
@@ -63,7 +59,22 @@ const roomBookingSchema = new mongoose.Schema({
   status: { type: String, default: "OCCUPIED" },
 
   advancePaid: { type: Number, default: 0 },
-  balanceDue: { type: Number, default: 0 }
+  advancePaymentMode: {
+    type: String,
+    enum: ["CASH", "UPI", "CARD", "BANK_TRANSFER", "ONLINE", "OTHER"],
+    default: "CASH"
+  },
+
+  balanceDue: { type: Number, default: 0 },
+
+  // NEW FIELDS FOR FINAL PAYMENT AT CHECKOUT
+  finalPaymentReceived: { type: Boolean, default: false },
+  finalPaymentMode: {
+    type: String,
+    enum: ["CASH", "UPI", "CARD", "BANK_TRANSFER", "ONLINE", "OTHER"],
+    default: null
+  },
+  finalPaymentAmount: { type: Number, default: 0 }
 
 }, { timestamps: true });
 

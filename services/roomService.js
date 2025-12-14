@@ -227,15 +227,18 @@ export const getAllRoomsWithBookingStatus = async (hotel_id, checkInDT, checkOut
 };
 
 export const getActiveBookingForToday = async (roomId, hotelId) => {
-  const today = new Date();
-  const startOfDay = new Date(today.setHours(0,0,0,0));
-  const endOfDay = new Date(today.setHours(23,59,59,999));
+  const now = new Date();
 
   return RoomBooking.findOne({
-    room_id: roomId,
     hotel_id: hotelId,
+    room_id: roomId,
     status: { $nin: ["CANCELLED", "CHECKED_OUT"] },
-    checkIn: { $lte: endOfDay },
-    checkOut: { $gt: startOfDay }
+
+    // Guest should already have checked in
+    checkIn: { $lte: now },
+
+    // Guest should not have checked out yet
+    checkOut: { $gt: now }
   }).populate("room_id");
 };
+

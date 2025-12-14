@@ -10,6 +10,7 @@ export const createBookingSchema = z.object({
   adults: z.number(),
   children: z.number(),
   advancePaid: z.number().default(0),
+  advancePaymentMode: z.enum(["CASH", "UPI", "CARD", "BANK_TRANSFER", "ONLINE", "OTHER"]).optional(),
   discount: z.number().default(0),
   guestIds: z.array(z.object({
   type: z.enum(["Aadhaar Card", "Driving License", "Passport", "Voter ID"]),
