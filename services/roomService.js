@@ -207,7 +207,7 @@ export const getAllRoomsWithBookingStatus = async (hotel_id, checkInDT, checkOut
 
   const bookings = await RoomBooking.find({
     hotel_id,
-    status: { $nin: ["CANCELLED"] },
+    status: { $nin: ["CANCELLED", "CHECKEDOUT"] },
     checkIn: { $lt: reqOut },
     checkOut: { $gt: reqIn }
   });

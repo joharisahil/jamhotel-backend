@@ -259,6 +259,7 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
       hotel_id: booking.hotel_id,
       bookingId: booking._id,
       room_id: room._id,
+      roomNumber: room.number, 
       invoiceNumber,
 
       guestName: booking.guestName,
@@ -294,8 +295,9 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
       advancePaid: booking.advancePaid,
       balanceDue: updatedBalance,
 
+      advancePaymentMode: booking.advancePaymentMode, 
+      finalPaymentMode: booking.finalPaymentMode,     
       finalPaymentReceived: booking.finalPaymentReceived,
-      finalPaymentMode: booking.finalPaymentMode,
       finalPaymentAmount: booking.finalPaymentAmount,
 
       actualCheckoutTime
