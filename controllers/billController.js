@@ -5,6 +5,7 @@ import * as transactionService from "../services/transactionService.js";
 import { manualRestaurantBillSchema } from "../validators/manualRestaurantBillValidator.js";
 import RoomBooking from "../models/RoomBooking.js";
 import Order from "../models/Order.js";
+import Counter from "../models/Counter.js";
 
 /**
  * GET /billing
@@ -158,34 +159,24 @@ export const createManualRestaurantBill = asyncHandler(async (req, res) => {
     paymentMethod
   } = data;
 
-  // generate bill number
-  // Find last bill number safely
-  // ----------------------
-  // SAFE BILL NUMBER LOGIC
-  // ----------------------
-  const lastBill = await Bill.findOne({ hotel_id, source: "RESTAURANT" })
-    .sort({ createdAt: -1 })
-    .lean();
+  // ------------------------------
+  // ATOMIC BILL NUMBER GENERATION
+  // ------------------------------
+  const counter = await Counter.findOneAndUpdate(
+    { hotel_id, key: "RESTAURANT_BILL" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
 
-  let nextNumber = 1;
-
-  if (lastBill) {
-    const parsed = parseInt(lastBill.billNumber, 10);
-
-    // If parsed is valid number, increment
-    if (!isNaN(parsed)) nextNumber = parsed + 1;
-  }
-
-  // Always produce a zero-padded bill number
-  const generatedBillNumber = String(nextNumber).padStart(6, "0");
+  const billNumber = String(counter.seq).padStart(6, "0");
 
   const bill = await Bill.create({
     hotel_id,
-    billNumber: generatedBillNumber,
+    billNumber,
     source: "RESTAURANT",
     customerName,
     customerPhone,
-    table_id: null,   // since manually entered
+    table_id: null,
     referenceId: null,
     orders: [
       {
@@ -202,7 +193,6 @@ export const createManualRestaurantBill = asyncHandler(async (req, res) => {
     createdBy: req.user._id
   });
 
-  // also log a transaction
   await transactionService.createTransaction(hotel_id, {
     type: "CREDIT",
     source: "RESTAURANT",
@@ -213,6 +203,7 @@ export const createManualRestaurantBill = asyncHandler(async (req, res) => {
 
   res.json({ success: true, bill });
 });
+
 
 export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
