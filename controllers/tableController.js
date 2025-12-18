@@ -101,7 +101,6 @@ export const tableOverview = async (req, res) => {
 export const startTableSession = async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;
-
   const table = await Table.findOne({ _id: tableId, hotel_id });
 
   if (!table)

@@ -22,9 +22,18 @@ export const createOrder = async (payload) => {
       entity = await Room.findById(payload.room_id);
     }
 
-    if (!entity || entity.sessionToken !== payload.sessionToken) {
-      return { success: false, message: "QR session expired. Please rescan." };
-    }
+    if (
+  !entity ||
+  entity.sessionToken !== payload.sessionToken ||
+  !entity.sessionExpiresAt ||
+  Date.now() > new Date(entity.sessionExpiresAt).getTime()
+) {
+  return {
+    success: false,
+    message: "QR session expired. Please rescan."
+  };
+}
+
   }
 
   /* --------------------------------
@@ -79,6 +88,30 @@ export const createOrder = async (payload) => {
   const gst = +(subtotal * 0.05).toFixed(2);
   const total = subtotal + gst;
 
+if (payload.table_id) {
+  tableSession = await TableSession.findOne({
+    table_id: payload.table_id,
+    hotel_id: payload.hotel_id,
+    status: "ACTIVE"
+  });
+
+  // Auto-create session if QR order is first order
+  if (!tableSession) {
+    tableSession = await TableSession.create({
+      hotel_id: payload.hotel_id,
+      table_id: payload.table_id,
+    });
+
+    await Table.findByIdAndUpdate(payload.table_id, {
+      status: "OCCUPIED",
+      activeSession: {
+        sessionId: tableSession._id,
+        startedAt: tableSession.startedAt,
+      }
+    });
+  }
+}
+
   /* --------------------------------
    * CREATE ORDER
    * -------------------------------- */
@@ -87,7 +120,7 @@ export const createOrder = async (payload) => {
     table_id: payload.table_id,
     room_id: payload.room_id,
     source: payload.source,
-    tableSession_id: tableSession?._id || null,
+    tableSession_id: tableSession?._id,
     items,
     subtotal,
     gst,
@@ -139,7 +172,6 @@ export const updateOrderStatus = async (orderId, status) => {
     }
     if (populatedOrder.table_id) {
       await Table.findByIdAndUpdate(populatedOrder.table_id._id, {
-        sessionToken: null
       });
     }
   }  
