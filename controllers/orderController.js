@@ -1,6 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import * as orderService from "../services/orderService.js";
 import { createOrderSchema } from "../validators/orderValidator.js";
+import TableSession from "../models/TableSession.js";
 import Order from "../models/Order.js"
 
 export const createOrder = asyncHandler(async (req,res) => {
@@ -34,3 +35,43 @@ const orders = await Order.find({
   res.json({ success: true, orders });
 });
 
+export const createManualOrder = asyncHandler(async (req, res) => {
+  const payload = {
+    ...req.body,
+    source: "MANUAL",
+  };
+
+  const result = await orderService.createOrder(payload);
+  res.json({ success: true, ...result });
+});
+
+export const getOrdersByTable = asyncHandler(async (req, res) => {
+  const { tableId } = req.params;
+  const hotel_id = req.user.hotel_id;
+
+  // 1️⃣ Find active session for this table
+  const session = await TableSession.findOne({
+    hotel_id,
+    table_id: tableId,
+    status: "ACTIVE"
+  });
+
+  if (!session) {
+    return res.json({
+      success: true,
+      orders: [] // no active session = no orders
+    });
+  }
+
+  // 2️⃣ Fetch orders linked to this session
+  const orders = await Order.find({
+    hotel_id,
+    tableSession_id: session._id
+  }).sort({ createdAt: 1 });
+
+  res.json({
+    success: true,
+    sessionId: session._id,
+    orders
+  });
+});

@@ -6,6 +6,9 @@ import { manualRestaurantBillSchema } from "../validators/manualRestaurantBillVa
 import RoomBooking from "../models/RoomBooking.js";
 import Order from "../models/Order.js";
 import Counter from "../models/Counter.js";
+import Table from "../models/Table.js";
+import TableSession from "../models/TableSession.js";
+import Hotel from "../models/Hotel.js";
 
 /**
  * GET /billing
@@ -226,7 +229,7 @@ export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
   const orderItems = items.map(i => ({
     item_id: null,
     name: i.name,
-    size: i.variant.toUpperCase(),
+    size: (i.size || i.variant || "FULL").toUpperCase(),
     qty: i.qty,
     unitPrice: i.price,
     totalPrice: i.total
@@ -235,6 +238,7 @@ export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
   const order = await Order.create({
     hotel_id,
     room_id: booking.room_id,
+    source: "RESTAURANT_TRANSFER",
     items: orderItems,
     subtotal,
     discount,
@@ -244,10 +248,170 @@ export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
     paymentStatus: "PENDING"
   });
 
+  // Close table session if transferred from table
+if (req.body.tableId) {
+  const table = await Table.findOne({ _id: req.body.tableId, hotel_id });
+  if (table?.activeSession?.sessionId) {
+    await TableSession.findByIdAndUpdate(
+      table.activeSession.sessionId,
+      { status: "CLOSED", closedAt: new Date() }
+    );
+
+    table.status = "AVAILABLE";
+    table.activeSession = null;
+    table.sessionToken = null;
+    table.sessionExpiresAt = null;
+    await table.save();
+  }
+}
+
   return res.json({
     success: true,
     message: "Food bill transferred to room",
     booking,
     order
   });
+});
+
+export const checkoutTable = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { tableId } = req.params;
+
+  const {
+    discount = 0,
+    payments = [],
+    customerName,
+    customerPhone,
+    items: frontendItems,
+    subtotal: frontendSubtotal,
+    gst: frontendGst,
+    finalAmount: frontendFinalAmount
+  } = req.body;
+
+  const table = await Table.findOne({ _id: tableId, hotel_id });
+  if (!table?.activeSession?.sessionId) {
+    return res.status(400).json({
+      success: false,
+      message: "No active table session"
+    });
+  }
+
+  const session = await TableSession.findById(table.activeSession.sessionId);
+
+  let items = [];
+  let subtotal = 0;
+  let gst = 0;
+  let finalAmount = 0;
+
+  if (Array.isArray(frontendItems) && frontendItems.length > 0) {
+    items = frontendItems.map(i => ({
+      item_id: null,
+      name: i.name,
+      size: i.size,
+      qty: i.qty,
+      unitPrice: Number(i.unitPrice),
+      totalPrice: i.total
+    }));
+
+    subtotal = frontendSubtotal;
+    gst = frontendGst;
+    finalAmount = frontendFinalAmount;
+  } else {
+    const orders = await Order.find({
+      tableSession_id: session._id
+    });
+
+    if (!orders.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No orders in this session"
+      });
+    }
+
+    items = orders.flatMap(o => o.items);
+    subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
+    gst = +(subtotal * 0.05).toFixed(2);
+    finalAmount = subtotal + gst - discount;
+  }
+
+  const counter = await Counter.findOneAndUpdate(
+    { hotel_id, key: "RESTAURANT_BILL" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+
+  const billNumber = String(counter.seq).padStart(6, "0");
+
+  if (!payments.length) {
+  return res.status(400).json({
+    success: false,
+    message: "Payment details required"
+  });
+}
+
+const paidAmount = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+if (+paidAmount.toFixed(2) !== +finalAmount.toFixed(2)) {
+  return res.status(400).json({
+    success: false,
+    message: "Payment split does not match final amount"
+  });
+}
+
+const billData = {
+  hotel_id,
+  billNumber,
+  source: "RESTAURANT",
+  table_id: table._id,
+  customerName,
+  customerPhone,
+  subtotal,
+  gst,
+  discount,
+  finalAmount,
+  payments,
+  orders: [
+    {
+      order_id: null,
+      total: finalAmount,
+      items
+    }
+  ],
+  createdBy: req.user._id
+};
+
+if (payments.length === 1) {
+  billData.paymentMode = payments[0].mode;
+}
+
+const bill = await Bill.create(billData);
+
+  for (const p of payments) {
+  await transactionService.createTransaction(hotel_id, {
+    type: "CREDIT",
+    source: "RESTAURANT",
+    amount: p.amount,
+    paymentMode: p.mode,
+    referenceId: bill._id,
+    description: `Restaurant Bill #${billNumber} (${p.mode})`
+  });
+}
+
+  session.status = "CLOSED";
+  session.closedAt = new Date();
+  session.customerName = customerName;
+  session.customerPhone = customerPhone;
+  await session.save();
+
+  table.status = "AVAILABLE";
+  table.activeSession = null;
+  table.sessionToken = null;
+  table.sessionExpiresAt = null;
+  await table.save();
+
+  const hotel = await Hotel.findById(hotel_id).select(
+    "name address phone gstNumber"
+  );
+
+  res.json({ success: true, bill, hotel });
 });

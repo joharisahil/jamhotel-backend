@@ -5,22 +5,51 @@ import Table from "../models/Table.js";
 import Room from "../models/Room.js";
 import mongoose from "mongoose";
 import { emitToHotel, emitToRole } from "../utils/socket.js";   
+import TableSession from "../models/TableSession.js";
 
 export const createOrder = async (payload) => {
 
-  let entity = null;
+  /* --------------------------------
+   * QR VALIDATION (ONLY FOR QR)
+   * -------------------------------- */
+  if (payload.source === "QR") {
+    let entity = null;
 
-  if (payload.table_id) {
-    entity = await Table.findById(payload.table_id);
-  }
-  if (payload.room_id) {
-    entity = await Room.findById(payload.room_id);
+    if (payload.table_id) {
+      entity = await Table.findById(payload.table_id);
+    }
+    if (payload.room_id) {
+      entity = await Room.findById(payload.room_id);
+    }
+
+    if (!entity || entity.sessionToken !== payload.sessionToken) {
+      return { success: false, message: "QR session expired. Please rescan." };
+    }
   }
 
-  if (!entity || entity.sessionToken !== payload.sessionToken) {
-    return { success: false, message: "QR session expired. Please rescan." };
+  /* --------------------------------
+   * MANUAL TABLE ORDER VALIDATION
+   * -------------------------------- */
+  let tableSession = null;
+
+  if (payload.source === "MANUAL" && payload.table_id) {
+    tableSession = await TableSession.findOne({
+      table_id: payload.table_id,
+      hotel_id: payload.hotel_id,
+      status: "ACTIVE"
+    });
+
+    if (!tableSession) {
+      return {
+        success: false,
+        message: "No active table session found"
+      };
+    }
   }
 
+  /* --------------------------------
+   * BUILD ITEMS
+   * -------------------------------- */
   let subtotal = 0;
   const items = [];
 
@@ -50,9 +79,15 @@ export const createOrder = async (payload) => {
   const gst = +(subtotal * 0.05).toFixed(2);
   const total = subtotal + gst;
 
-  // Create base order
+  /* --------------------------------
+   * CREATE ORDER
+   * -------------------------------- */
   const order = await Order.create({
-    ...payload,
+    hotel_id: payload.hotel_id,
+    table_id: payload.table_id,
+    room_id: payload.room_id,
+    source: payload.source,
+    tableSession_id: tableSession?._id || null,
     items,
     subtotal,
     gst,
@@ -60,31 +95,9 @@ export const createOrder = async (payload) => {
     status: "NEW",
   });
 
-  // Resolve table string → ObjectId
- // Always validate QR session for table
-if (payload.table_id) {
-  const tbl = await Table.findById(payload.table_id);
-  if (!tbl || tbl.sessionToken !== payload.sessionToken) {
-    return { success: false, message: "QR session expired. Please rescan." };
-  }
-}
-
-
-  // Resolve room string → ObjectId
- if (payload.room_id) {
-  const rm = await Room.findById(payload.room_id);
-  if (!rm || rm.sessionToken !== payload.sessionToken) {
-    return { success: false, message: "QR session expired. Please rescan." };
-  }
-}
-
-
-  // Fetch populated order
-  const populatedOrder = await Order.findById(order._id)
-    .populate("table_id", "name")
-    .populate("room_id", "number");
-
-  // Create KOT
+  /* --------------------------------
+   * CREATE KOT
+   * -------------------------------- */
   const kot = await KOT.create({
     hotel_id: payload.hotel_id,
     order_id: order._id,
@@ -97,7 +110,9 @@ if (payload.table_id) {
     })),
   });
 
-  // Socket emit (consistent payload)
+  const populatedOrder = await Order.findById(order._id)
+    .populate("table_id", "name");
+
   const data = { order: populatedOrder, kot };
 
   emitToRole(payload.hotel_id, "KITCHEN_MANAGER", "order:created", data);

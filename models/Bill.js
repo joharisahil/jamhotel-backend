@@ -68,6 +68,19 @@ const billSchema = new mongoose.Schema(
       default: "CASH",
     },
 
+    payments: [
+  {
+    mode: {
+      type: String,
+      enum: ["CASH", "UPI", "CARD", "OTHER"],
+      required: true
+    },
+    amount: {
+      type: Number,
+      required: true
+    }
+  }
+],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

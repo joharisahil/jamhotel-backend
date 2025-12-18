@@ -83,7 +83,15 @@ export const publicMenu = asyncHandler(async (req, res) => {
   let meta = null;
 
   if (source === "table") {
-    meta = await Table.findById(id).select("name number sessionToken");
+  const table = await Table.findById(id);
+
+  if (!table.sessionToken || Date.now() > table.sessionExpiresAt) {
+    table.sessionToken = uuid();
+    table.sessionExpiresAt = new Date(Date.now() + 25 * 60 * 1000);
+    await table.save();
+  }
+
+    meta = table;
   }
 
   if (source === "room") {
@@ -91,13 +99,12 @@ export const publicMenu = asyncHandler(async (req, res) => {
   }
 
   // 🚨 NEW ADDITION
-if (!meta) {
-  return res.json({
-    success: false,
-    message: "Invalid QR",
-  });
-}
-
+  if (!meta) {
+   return res.json({
+     success: false,
+     message: "Invalid QR",
+   });
+ }
 
   res.json({
     success: true,

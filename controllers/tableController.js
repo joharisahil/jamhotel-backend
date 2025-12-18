@@ -1,5 +1,8 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Table from "../models/Table.js";
+import Order from "../models/Order.js";
+import TableSession from "../models/TableSession.js";
+import mongoose from "mongoose";
 
 export const createTable = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
@@ -59,3 +62,66 @@ export const deleteTable = asyncHandler(async (req, res) => {
   });
 });
 
+export const tableOverview = async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+
+  const tables = await Table.find({ hotel_id }).lean();
+
+  const result = [];
+
+  for (const table of tables) {
+    let orders = [];
+    let total = 0;
+    let sources = new Set();
+
+    if (table.activeSession?.sessionId) {
+      orders = await Order.find({
+        tableSession_id: table.activeSession.sessionId,
+      });
+
+      orders.forEach((o) => {
+        total += o.total;
+        sources.add(o.source);
+      });
+    }
+
+    result.push({
+      tableId: table._id,
+      name: table.name,
+      status: table.status,
+      ordersCount: orders.length,
+      total,
+      sources: Array.from(sources),
+    });
+  }
+
+  res.json({ success: true, tables: result });
+};
+
+export const startTableSession = async (req, res) => {
+  const { tableId } = req.params;
+  const hotel_id = req.user.hotel_id;
+
+  const table = await Table.findOne({ _id: tableId, hotel_id });
+
+  if (!table)
+    return res.status(404).json({ success: false, message: "Table not found" });
+
+  if (table.status !== "AVAILABLE")
+    return res.json({ success: true, table });
+
+  const session = await TableSession.create({
+    hotel_id,
+    table_id: tableId,
+  });
+
+  table.status = "OCCUPIED";
+  table.activeSession = {
+    sessionId: session._id,
+    startedAt: session.startedAt,
+  };
+
+  await table.save();
+
+  res.json({ success: true, session, table });
+};

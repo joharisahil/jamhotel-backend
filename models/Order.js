@@ -11,8 +11,6 @@ const orderItemSchema = new mongoose.Schema({
 
 const orderSchema = new mongoose.Schema({
   hotel_id: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
-
-  source: String, // QR, TABLE, ROOM
   table_id: { type: mongoose.Schema.Types.ObjectId, ref: "Table" },
   room_id: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
 
@@ -26,6 +24,22 @@ const orderSchema = new mongoose.Schema({
   total: Number,
 
   status: { type: String, default: "NEW" },
+
+  tableSession_id: {
+   type: mongoose.Schema.Types.ObjectId,
+   ref: "TableSession",
+  },
+
+  source: {
+   type: String,
+   enum: [
+    "QR",
+    "MANUAL",
+    "RESTAURANT_TRANSFER",
+    "ROOM_SERVICE"
+  ],
+   required: true,
+  },
 
   // ------------------------------
   // BILLING FIELDS (add these)

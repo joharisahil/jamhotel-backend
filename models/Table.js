@@ -4,11 +4,21 @@ const tableSchema = new mongoose.Schema({
   hotel_id: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
   name: String,
   capacity: Number,
-  status: { type: String, default: "AVAILABLE" },
+  status: {
+    type: String,
+    enum: ["AVAILABLE", "OCCUPIED", "BILLING"],
+    default: "AVAILABLE",
+  },
+
+  activeSession: {
+    sessionId: { type: mongoose.Schema.Types.ObjectId, ref: "TableSession" },
+    startedAt: Date,
+  },
   locationDesc: String,
   qrUrl: String,
   qrCodeId: String,
-  sessionToken: { type: String, default: null }
+  sessionToken: String,
+  sessionExpiresAt: Date,
 }, { timestamps: true });
 
 tableSchema.index({ hotel_id: 1 });
