@@ -115,9 +115,13 @@ export const getRoomInvoiceById = asyncHandler(async (req, res) => {
   const { billId } = req.params;
   const hotel_id = req.user.hotel_id;
 
-  // Find room invoice
-  const invoice = await RoomInvoice.findOne({ _id: billId, hotel_id })
-    .populate("room_id");
+  // 1️⃣ Invoice + Room
+  const invoice = await RoomInvoice.findOne({
+    _id: billId,
+    hotel_id
+  })
+    .populate("room_id", "number type")
+    .lean();
 
   if (!invoice) {
     return res.status(404).json({
@@ -126,22 +130,45 @@ export const getRoomInvoiceById = asyncHandler(async (req, res) => {
     });
   }
 
-  // Return in same format as Bill so frontend works without change
-  const formatted = {
-    _id: invoice._id,
-    billNumber: invoice.invoiceNumber,
-    source: "ROOM",
-    customerName: invoice.guestName,
-    customerPhone: invoice.guestPhone,
-    createdAt: invoice.createdAt,
-    finalAmount: invoice.totalAmount,
-    room_id: invoice.room_id,
-    fullInvoice: invoice   // contains stay + services + food breakdown
+  // 2️⃣ Booking (check-in + payment mode)
+  const booking = await RoomBooking.findById(invoice.bookingId)
+    .select("checkIn advancePaymentMode")
+    .lean();
+
+  // 3️⃣ Hotel (invoice header)
+  const hotel = await Hotel.findById(invoice.hotel_id)
+    .select("name address phone gstNumber")
+    .lean();
+
+  // 4️⃣ Enriched invoice (SOURCE OF TRUTH)
+  const enrichedInvoice = {
+    ...invoice,
+
+    hotel: hotel || null,
+
+    roomNumber: invoice.room_id?.number ?? "N/A",
+    roomType: invoice.room_id?.type ?? "N/A",
+
+    checkIn: booking?.checkIn ?? null,
+    actualCheckoutTime: invoice.actualCheckoutTime,
+
+    advancePaymentMode: booking?.advancePaymentMode ?? null
   };
 
+  // 5️⃣ Bill-compatible response
   res.json({
     success: true,
-    bill: formatted
+    bill: {
+      _id: invoice._id,
+      billNumber: invoice.invoiceNumber,
+      source: "ROOM",
+      customerName: invoice.guestName,
+      customerPhone: invoice.guestPhone,
+      createdAt: invoice.createdAt,
+      finalAmount: invoice.totalAmount,
+      room_id: invoice.room_id?._id,
+      fullInvoice: enrichedInvoice
+    }
   });
 });
 

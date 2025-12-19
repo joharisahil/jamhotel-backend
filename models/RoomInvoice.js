@@ -1,9 +1,17 @@
 import mongoose from "mongoose";
 
 const roomInvoiceSchema = new mongoose.Schema({
-  hotel_id: mongoose.Types.ObjectId,
-  room_id: mongoose.Types.ObjectId,
-  bookingId: mongoose.Types.ObjectId,
+hotel_id: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel" },
+
+  room_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Room" 
+  },
+
+  bookingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "RoomBooking"
+  },
 
   invoiceNumber: String,
 
