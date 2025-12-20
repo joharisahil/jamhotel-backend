@@ -21,7 +21,14 @@ import Hotel from "../models/Hotel.js";
  */
 export const listBills = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { source, from, to, search, page = 1, limit = 50 } = req.query;
+  const {
+    source,
+    from,
+    to,
+    search,
+    page = 1,
+    limit = 20
+  } = req.query;
 
   const q = { hotel_id };
 
@@ -38,19 +45,51 @@ export const listBills = asyncHandler(async (req, res) => {
     q.$or = [
       { billNumber: { $regex: s, $options: "i" } },
       { customerPhone: { $regex: s, $options: "i" } },
-      { customerName: { $regex: s, $options: "i" } },
-      { referenceId: { $regex: s, $options: "i" } },
+      { customerName: { $regex: s, $options: "i" } }
     ];
   }
 
   const skip = (Number(page) - 1) * Number(limit);
 
-  const [bills, total] = await Promise.all([
-    Bill.find(q).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
-    Bill.countDocuments(q),
+  const [rawBills, total] = await Promise.all([
+    Bill.find(q)
+      .populate("table_id", "name")
+      .populate("room_id", "number")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean(),
+    Bill.countDocuments(q)
   ]);
 
-  res.json({ success: true, bills, total, page: Number(page), limit: Number(limit) });
+  // 🔁 Normalize for frontend
+  const bills = rawBills.map(b => ({
+    _id: b._id,
+    billNumber: b.billNumber,
+    source: b.source,
+    customerName: b.customerName,
+    customerPhone: b.customerPhone,
+    finalAmount: b.finalAmount,
+    createdAt: b.createdAt,
+
+    table: b.table_id
+      ? { _id: b.table_id._id, name: b.table_id.name }
+      : null,
+
+    room: b.room_id
+      ? { _id: b.room_id._id, number: b.room_id.number }
+      : null,
+
+    banquet: null // future-ready
+  }));
+
+  res.json({
+    success: true,
+    bills,
+    total,
+    page: Number(page),
+    limit: Number(limit)
+  });
 });
 
 export const getBillById = asyncHandler(async (req, res) => {
@@ -59,14 +98,17 @@ export const getBillById = asyncHandler(async (req, res) => {
 
   const bill = await Bill.findOne({ _id: billId, hotel_id });
 
+  const hotel = await Hotel.findById(hotel_id)
+  .select("name address phone gstNumber");
+
   if (!bill) return res.status(404).json({ success: false, message: "Bill not found" });
 
-  res.json({ success: true, bill });
+  res.json({ success: true, bill, hotel });
 });
 
 export const listRoomInvoices = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { search, from, to, page = 1, limit = 50 } = req.query;
+  const { search, from, to, page = 1, limit = 20 } = req.query;
 
   const q = { hotel_id };
 
@@ -89,33 +131,48 @@ export const listRoomInvoices = asyncHandler(async (req, res) => {
 
   const [invoices, total] = await Promise.all([
     RoomInvoice.find(q)
-      .populate("room_id")
+      .populate("room_id", "number")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(Number(limit)),
+      .limit(Number(limit))
+      .lean(),
     RoomInvoice.countDocuments(q)
   ]);
 
-  // FORMAT RESPONSE to match "Bill" model, so frontend doesn't need changes
-  const formatted = invoices.map(inv => ({
+  const bills = invoices.map(inv => ({
     _id: inv._id,
-    billNumber: inv.invoiceNumber,   // same field used in Bill
+    billNumber: inv.invoiceNumber,
     source: "ROOM",
     customerName: inv.guestName,
     customerPhone: inv.guestPhone,
     finalAmount: inv.totalAmount,
     createdAt: inv.createdAt,
-    room_id: inv.room_id
+
+    table: null,
+
+    room: inv.room_id
+      ? {
+          _id: inv.room_id._id,
+          number: inv.room_id.number
+        }
+      : null,
+
+    banquet: null
   }));
 
-  res.json({ success: true, bills: formatted, total });
+  res.json({
+    success: true,
+    bills,
+    total,
+    page: Number(page),
+    limit: Number(limit)
+  });
 });
 
 export const getRoomInvoiceById = asyncHandler(async (req, res) => {
   const { billId } = req.params;
   const hotel_id = req.user.hotel_id;
 
-  // 1️⃣ Invoice + Room
   const invoice = await RoomInvoice.findOne({
     _id: billId,
     hotel_id
@@ -130,32 +187,14 @@ export const getRoomInvoiceById = asyncHandler(async (req, res) => {
     });
   }
 
-  // 2️⃣ Booking (check-in + payment mode)
   const booking = await RoomBooking.findById(invoice.bookingId)
     .select("checkIn advancePaymentMode")
     .lean();
 
-  // 3️⃣ Hotel (invoice header)
   const hotel = await Hotel.findById(invoice.hotel_id)
     .select("name address phone gstNumber")
     .lean();
 
-  // 4️⃣ Enriched invoice (SOURCE OF TRUTH)
-  const enrichedInvoice = {
-    ...invoice,
-
-    hotel: hotel || null,
-
-    roomNumber: invoice.room_id?.number ?? "N/A",
-    roomType: invoice.room_id?.type ?? "N/A",
-
-    checkIn: booking?.checkIn ?? null,
-    actualCheckoutTime: invoice.actualCheckoutTime,
-
-    advancePaymentMode: booking?.advancePaymentMode ?? null
-  };
-
-  // 5️⃣ Bill-compatible response
   res.json({
     success: true,
     bill: {
@@ -164,10 +203,16 @@ export const getRoomInvoiceById = asyncHandler(async (req, res) => {
       source: "ROOM",
       customerName: invoice.guestName,
       customerPhone: invoice.guestPhone,
-      createdAt: invoice.createdAt,
       finalAmount: invoice.totalAmount,
-      room_id: invoice.room_id?._id,
-      fullInvoice: enrichedInvoice
+      createdAt: invoice.createdAt,
+
+      room: invoice.room_id
+        ? { _id: invoice.room_id._id, number: invoice.room_id.number }
+        : null,
+
+      hotel,
+      fullInvoice: invoice,
+      bookingInfo: booking
     }
   });
 });
@@ -254,7 +299,7 @@ export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
 
   // Convert restaurant items → Order items
   const orderItems = items.map(i => ({
-    item_id: null,
+    item_id: i.item_id || null,
     name: i.name,
     size: (i.size || i.variant || "FULL").toUpperCase(),
     qty: i.qty,

@@ -30,6 +30,17 @@ const roomBookingSchema = new mongoose.Schema({
   guestPhone: String,
   guestEmail: String,
 
+  guestCity: String,
+  guestNationality: String,
+  guestAddress: String,
+
+  companyName: String,
+  companyGSTIN: String,
+  companyAddress: String,
+
+  roundOffEnabled: { type: Boolean, default: true },
+  roundOffAmount: { type: Number, default: 0 },
+
   checkIn: { type: Date, required: true },
   checkOut: { type: Date, required: true },
 

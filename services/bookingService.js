@@ -27,6 +27,7 @@ export const createBooking = async ({
   checkIn,
   checkOut,
   gstEnabled = true,
+  roundOffEnabled = true,
   planCode,
   adults = 1,
   children = 0,
@@ -37,120 +38,170 @@ export const createBooking = async ({
   addedServices = [],
   ...rest
 }) => {
-  // normalize inputs
+  /* ---------------- VALIDATION ---------------- */
+
   const checkInDT = new Date(checkIn);
   const checkOutDT = new Date(checkOut);
 
   if (isNaN(checkInDT.getTime()) || isNaN(checkOutDT.getTime())) {
     throw new Error("Invalid checkIn/checkOut datetime");
   }
+
   if (checkInDT >= checkOutDT) {
     throw new Error("checkIn must be before checkOut");
   }
 
-  // 1) Availability check (overlap in datetime)
-  // Overlap if: existing.checkIn < newCheckOut AND existing.checkOut > newCheckIn
+  /* ---------------- AVAILABILITY CHECK ---------------- */
+
   const overlapping = await RoomBooking.findOne({
     hotel_id,
     room_id,
     status: { $nin: ["CANCELLED"] },
     checkIn: { $lt: checkOutDT },
-    checkOut: { $gt: checkInDT }
+    checkOut: { $gt: checkInDT },
   });
 
   if (overlapping) {
-    // If overlapping exists, it blocks booking (because some booking still occupies at the requested time)
     throw new Error("Room not available in selected dates/times");
   }
 
-  // 2) Load room and plan
+  /* ---------------- ROOM + PLAN ---------------- */
+
   const room = await Room.findById(room_id);
   if (!room) throw new Error("Room not found");
 
-  const plan = room.plans.find(p =>
-    p.code === planCode || `${p.code}_SINGLE` === planCode || `${p.code}_DOUBLE` === planCode
+  const plan = room.plans.find(
+    (p) =>
+      p.code === planCode ||
+      `${p.code}_SINGLE` === planCode ||
+      `${p.code}_DOUBLE` === planCode
   );
   if (!plan) throw new Error("Invalid plan selected");
 
   const isSingle = String(planCode).includes("SINGLE");
   const rate = isSingle ? plan.singlePrice : plan.doublePrice;
 
-  // 3) Nights calculation: treat full-day blocks from checkIn to checkOut
-  // nights = ceil((checkOut - checkIn) / 1 day), minimum 1
-  const rawDays = (checkOutDT.getTime() - checkInDT.getTime()) / MS_PER_DAY;
+  /* ---------------- NIGHTS ---------------- */
+
+  const rawDays =
+    (checkOutDT.getTime() - checkInDT.getTime()) / MS_PER_DAY;
   const nights = Math.max(1, Math.ceil(rawDays));
 
-  // 4) Room total (rate * nights)
+  /* ---------------- ROOM + EXTRAS ---------------- */
+
   const roomTotal = +(rate * nights).toFixed(2);
 
-  // 5) Extras total: each extra can specify `days` (array of day indexes 1..n). If absent -> assume all nights.
-  // e.g. addedServices = [{ name, price, days: [1] }] => only day1 charged
   const extrasTotal = addedServices.reduce((sum, s) => {
     const price = Number(s.price || 0);
-    const daysArray = Array.isArray(s.days) && s.days.length > 0 ? s.days : Array.from({ length: nights }, (_, i) => i + 1);
-    // number of charged days equals unique days in daysArray but bounded by nights
-    const uniqueDays = [...new Set(daysArray)].filter(d => d >= 1 && d <= nights);
+    const daysArray =
+      Array.isArray(s.days) && s.days.length > 0
+        ? s.days
+        : Array.from({ length: nights }, (_, i) => i + 1);
+
+    const uniqueDays = [...new Set(daysArray)].filter(
+      (d) => d >= 1 && d <= nights
+    );
+
     return sum + price * uniqueDays.length;
   }, 0);
 
   const baseTotal = +(roomTotal + extrasTotal).toFixed(2);
 
-  // 6) Discount (percentage)
-  const discountPercent = Number(discount || 0);
-  const discountAmount = +((baseTotal * discountPercent) / 100).toFixed(2);
+  /* ---------------- DISCOUNT ---------------- */
 
-  // 7) Taxable (after discount)
+  const discountPercent = Number(discount || 0);
+  const discountAmount = +(
+    (baseTotal * discountPercent) /
+    100
+  ).toFixed(2);
+
   const taxable = +(baseTotal - discountAmount).toFixed(2);
 
-  // 8) GST split (if enabled) — CGST & SGST each 2.5% (total 5%)
+  /* ---------------- GST ---------------- */
+
   let cgst = 0;
   let sgst = 0;
+
   if (gstEnabled) {
     cgst = +(taxable * 0.025).toFixed(2);
     sgst = +(taxable * 0.025).toFixed(2);
   }
 
-  const finalTotal = +(taxable + cgst + sgst).toFixed(2);
-  const balanceDue = Math.max(0, +(finalTotal - Number(advancePaid || 0)).toFixed(2));
-  advancePaymentMode = rest.advancePaymentMode || advancePaymentMode;
+  let total = +(taxable + cgst + sgst).toFixed(2);
 
-  // 9) Create booking
+  /* ---------------- ROUND OFF ---------------- */
+
+  let roundOffAmount = 0;
+  let finalTotal = total;
+
+  if (roundOffEnabled) {
+    finalTotal = Math.round(total);
+    roundOffAmount = +(finalTotal - total).toFixed(2);
+  }
+
+  const balanceDue = Math.max(
+    0,
+    +(finalTotal - Number(advancePaid || 0)).toFixed(2)
+  );
+
+  /* ---------------- CREATE BOOKING ---------------- */
+
   const bookingPayload = {
     hotel_id,
     room_id,
+
     checkIn: checkInDT,
     checkOut: checkOutDT,
+
+    guestName: rest.guestName,
+    guestPhone: rest.guestPhone,
+    guestEmail: rest.guestEmail,
+
+    guestCity: rest.guestCity,
+    guestNationality: rest.guestNationality,
+    guestAddress: rest.guestAddress,
+
+    companyName: rest.companyName,
+    companyGSTIN: rest.companyGSTIN,
+    companyAddress: rest.companyAddress,
+
     gstEnabled,
+    roundOffEnabled,
+    roundOffAmount,
+
     planCode,
     adults,
     children,
+
     advancePaid: Number(advancePaid || 0),
     advancePaymentMode,
+
     discount: discountPercent,
     discountAmount,
+
     taxable,
     cgst,
     sgst,
+
     addedServices,
-    balanceDue,
     guestIds,
-    ...rest
+
+    balanceDue,
+    notes: rest.notes,
   };
 
   const booking = await RoomBooking.create(bookingPayload);
 
-  // 10) Mark room OCCUPIED (current state)
+  /* ---------------- UPDATE ROOM STATUS ---------------- */
+
   try {
     await Room.findByIdAndUpdate(room_id, { status: "OCCUPIED" });
   } catch (e) {
-    // non-fatal
-    console.warn("Failed to update room status after booking:", e.message);
+    console.warn("Room status update failed:", e.message);
   }
 
   return booking;
 };
-
-
 /**
  * checkoutBooking
  *
