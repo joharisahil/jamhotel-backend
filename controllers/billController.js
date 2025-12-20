@@ -332,7 +332,8 @@ export const checkoutTable = asyncHandler(async (req, res) => {
 
   if (Array.isArray(frontendItems) && frontendItems.length > 0) {
     items = frontendItems.map(i => ({
-      item_id: null,
+      item_id: i.item_id || null,
+      order_id: i.order_id || null,
       name: i.name,
       size: i.size,
       qty: i.qty,
@@ -399,7 +400,7 @@ const billData = {
   payments,
   orders: [
     {
-      order_id: null,
+      order_id: items[0]?.order_id || null,
       total: finalAmount,
       items
     }
