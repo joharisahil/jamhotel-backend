@@ -67,7 +67,9 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
   const orders = await Order.find({
     hotel_id,
     tableSession_id: session._id
-  }).sort({ createdAt: 1 });
+  })
+  .populate("table_id", "name")
+  .sort({ createdAt: 1 });
 
   res.json({
     success: true,
