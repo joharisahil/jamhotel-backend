@@ -63,6 +63,17 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
     });
   }
 
+    await Order.updateMany(
+    {
+      hotel_id,
+      table_id: tableId,
+      tableSession_id: { $exists: false },
+    },
+    {
+      $set: { tableSession_id: session._id },
+    }
+  );
+
   // 2️⃣ Fetch orders linked to this session
   const orders = await Order.find({
     hotel_id,

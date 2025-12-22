@@ -48,12 +48,20 @@ export const createOrder = async (payload) => {
       status: "ACTIVE"
     });
 
-    if (!tableSession) {
-      return {
-        success: false,
-        message: "No active table session found"
-      };
-    }
+      if (!tableSession) {
+    tableSession = await TableSession.create({
+      hotel_id: payload.hotel_id,
+      table_id: payload.table_id,
+    });
+
+    await Table.findByIdAndUpdate(payload.table_id, {
+      status: "OCCUPIED",
+      activeSession: {
+        sessionId: tableSession._id,
+        startedAt: tableSession.startedAt,
+      },
+    });
+  }
   }
 
   /* --------------------------------
