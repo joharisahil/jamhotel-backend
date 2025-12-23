@@ -14,7 +14,12 @@ import {
   getRoomServiceBillForBooking,
   updateFoodBilling,
   updateRoomBilling,
-  getActiveRoomsToday
+  getActiveRoomsToday,
+  updateGuestInfo,
+  updateGuestIds,
+  updateCompanyDetails,
+  updateBookingServices,
+  reduceStay
 } from "../controllers/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 
@@ -44,6 +49,11 @@ router.post("/:id/cancel", authorize("FRONT_OFFICE","GM","MD"), cancelBooking);
 router.patch("/:id/food-billing", authorize("FRONT_OFFICE","GM","MD"), updateFoodBilling);
 router.patch("/:id/room-billing", authorize("FRONT_OFFICE","GM","MD"), updateRoomBilling);
 router.get("/:roomId/invoices", authorize("FRONT_OFFICE","GM","MD"), getInvoicesByRoom);
+router.patch("/:id/guest", authorize("FRONT_OFFICE","GM","MD"), updateGuestInfo);
+router.patch("/:id/guest-ids", authorize("FRONT_OFFICE","GM","MD"), updateGuestIds);
+router.patch("/:id/company", authorize("FRONT_OFFICE","GM","MD"), updateCompanyDetails);
+router.patch("/:id/services", authorize("FRONT_OFFICE","GM","MD"), updateBookingServices);
+router.patch("/:id/reduce-stay", authorize("FRONT_OFFICE","GM","MD"), reduceStay);
 router.post("/:id/change-room", authorize("FRONT_OFFICE","GM","MD"), changeRoom);
 router.post("/:id/extend-stay", authorize("FRONT_OFFICE","GM","MD"), extendStay);
 

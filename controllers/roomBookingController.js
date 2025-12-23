@@ -47,6 +47,174 @@ export const getBooking = asyncHandler(async (req, res) => {
   res.json({ success: true, booking });
 });
 
+export const updateGuestInfo = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const {
+    guestName,
+    guestPhone,
+    guestCity,
+    guestNationality,
+    guestAddress,
+    adults,
+    children
+  } = req.body;
+
+  const booking = await RoomBooking.findById(id);
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
+    return res.status(403).json({ success: false, message: "Forbidden" });
+
+  booking.guestName = guestName;
+  booking.guestPhone = guestPhone;
+  booking.guestCity = guestCity;
+  booking.guestNationality = guestNationality;
+  booking.guestAddress = guestAddress;
+  booking.adults = adults;
+  booking.children = children;
+
+  await booking.save();
+
+  res.json({ success: true, booking });
+});
+
+export const updateGuestIds = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { guestIds } = req.body;
+
+  const booking = await RoomBooking.findById(id);
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
+    return res.status(403).json({ success: false, message: "Forbidden" });
+
+  booking.guestIds = Array.isArray(guestIds) ? guestIds : [];
+  await booking.save();
+
+  res.json({ success: true, booking });
+});
+
+export const updateCompanyDetails = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { companyName, companyGSTIN, companyAddress } = req.body;
+
+  const booking = await RoomBooking.findById(id);
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
+    return res.status(403).json({ success: false, message: "Forbidden" });
+
+  booking.companyName = companyName;
+  booking.companyGSTIN = companyGSTIN;
+  booking.companyAddress = companyAddress;
+
+  await booking.save();
+
+  res.json({ success: true, booking });
+});
+
+export const reduceStay = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { newCheckOut } = req.body;
+
+  const booking = await RoomBooking.findById(id).populate("room_id");
+  if (!booking)
+    return res.status(404).json({ success: false, message: "Booking not found" });
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id))
+    return res.status(403).json({ success: false, message: "Forbidden" });
+
+  const oldCheckOut = new Date(booking.checkOut);
+  const newCheckOutDT = new Date(newCheckOut);
+
+  if (isNaN(newCheckOutDT.getTime()))
+    return res.status(400).json({ success: false, message: "Invalid checkout date" });
+
+  if (newCheckOutDT <= new Date(booking.checkIn))
+    return res.status(400).json({ success: false, message: "Checkout must be after check-in" });
+
+  if (newCheckOutDT >= oldCheckOut)
+    return res.status(400).json({ success: false, message: "New checkout must be earlier than current checkout" });
+
+  // ---------- Recalculate nights ----------
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+  const nights = Math.max(
+    1,
+    Math.ceil((newCheckOutDT - new Date(booking.checkIn)) / MS_PER_DAY)
+  );
+
+  // ---------- Room rate ----------
+  const plan = booking.room_id.plans.find(p =>
+    booking.planCode.startsWith(p.code)
+  );
+  if (!plan)
+    return res.status(400).json({ success: false, message: "Invalid room plan" });
+
+  const isSingle = booking.planCode.includes("SINGLE");
+  const rate = isSingle ? plan.singlePrice : plan.doublePrice;
+
+  const roomBase = +(rate * nights).toFixed(2);
+
+  // ---------- Extra services ----------
+  let extrasBase = 0;
+  let extrasGST = 0;
+
+  (booking.addedServices || []).forEach(s => {
+    const price = Number(s.price || 0);
+    const days = Array.isArray(s.days) && s.days.length > 0
+      ? s.days.filter(d => d >= 1 && d <= nights)
+      : Array.from({ length: nights }, (_, i) => i + 1);
+
+    const base = price * days.length;
+    extrasBase += base;
+
+    if (booking.gstEnabled && s.gstEnabled !== false) {
+      extrasGST += +(base * 0.05).toFixed(2);
+    }
+  });
+
+  // ---------- Discount ----------
+  const discountPercent = booking.discount || 0;
+  const grossBase = roomBase + extrasBase;
+  const discountAmount = +((grossBase * discountPercent) / 100).toFixed(2);
+
+  const discountedBase = +(grossBase - discountAmount).toFixed(2);
+
+  // ---------- GST ----------
+  let totalGST = 0;
+  if (booking.gstEnabled) {
+    totalGST = +((discountedBase) * 0.05).toFixed(2);
+  }
+
+  const cgst = +(totalGST / 2).toFixed(2);
+  const sgst = +(totalGST / 2).toFixed(2);
+
+  const taxable = discountedBase;
+  const total = +(taxable + totalGST).toFixed(2);
+
+  // ---------- Balance ----------
+  const foodTotal = booking.foodTotals?.total || 0;
+  booking.balanceDue = +(total + foodTotal - booking.advancePaid).toFixed(2);
+
+  // ---------- Persist ----------
+  booking.checkOut = newCheckOutDT;
+  booking.taxable = taxable;
+  booking.cgst = cgst;
+  booking.sgst = sgst;
+  booking.discountAmount = discountAmount;
+
+  await booking.save();
+
+  res.json({
+    success: true,
+    message: "Stay reduced successfully",
+    booking
+  });
+});
+
 /**
  * LIST BOOKINGS
  */
@@ -244,16 +412,127 @@ export const extendStay = asyncHandler(async (req, res) => {
   const { newCheckOut } = req.body;
 
   const booking = await RoomBooking.findById(id);
+  if (!booking) {
+    return res.status(404).json({
+      success: false,
+      message: "Booking not found",
+    });
+  }
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden",
+    });
+  }
+
+  const newCheckOutDT = new Date(newCheckOut);
+  if (isNaN(newCheckOutDT.getTime())) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid checkout date/time",
+    });
+  }
+
+  if (newCheckOutDT <= booking.checkOut) {
+    return res.status(400).json({
+      success: false,
+      message: "New checkout must be after current checkout",
+    });
+  }
+
+  /* --------------------------------------------------
+   * CORRECT OVERLAP CHECK
+   * -------------------------------------------------- */
+  const conflict = await RoomBooking.findOne({
+    _id: { $ne: booking._id },
+    hotel_id: booking.hotel_id,
+    room_id: booking.room_id,
+    status: { $nin: ["CANCELLED"] },
+
+    // ✅ TRUE overlap condition
+    checkIn: { $lt: newCheckOutDT },
+    checkOut: { $gt: booking.checkOut },
+  }).sort({ checkIn: 1 });
+
+  if (conflict) {
+    const conflictCheckIn = new Date(conflict.checkIn);
+    const sameDay =
+      conflictCheckIn.toDateString() === newCheckOutDT.toDateString();
+
+    // ❌ HARD BLOCK
+    if (conflictCheckIn < newCheckOutDT) {
+      return res.status(409).json({
+        success: false,
+        code: "ROOM_ALREADY_BOOKED",
+        message: `Room has another booking starting on ${conflictCheckIn.toLocaleString()}`,
+        conflict: {
+          bookingId: conflict._id,
+          checkIn: conflict.checkIn,
+        },
+      });
+    }
+
+    // ⚠️ SOFT WARNING (same day, later time)
+    if (sameDay && conflictCheckIn > newCheckOutDT) {
+      booking.checkOut = newCheckOutDT;
+      await booking.save();
+
+      return res.json({
+        success: true,
+        warning: true,
+        message: `Room has a check-in on the same day at ${conflictCheckIn.toLocaleTimeString()}`,
+        booking,
+      });
+    }
+  }
+
+  /* --------------------------------------------------
+   * SAFE TO EXTEND
+   * -------------------------------------------------- */
+  booking.checkOut = newCheckOutDT;
+  await booking.save();
+
+  return res.json({
+    success: true,
+    message: "Stay extended successfully",
+    booking,
+  });
+});
+
+export const updateBookingServices = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { addedServices } = req.body;
+
+  const booking = await RoomBooking.findById(id);
   if (!booking)
     return res.status(404).json({ success: false, message: "Booking not found" });
 
   if (String(booking.hotel_id) !== String(req.user.hotel_id))
     return res.status(403).json({ success: false, message: "Forbidden" });
 
-  booking.checkOut = new Date(newCheckOut);
+  if (!Array.isArray(addedServices)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid services payload",
+    });
+  }
+
+  // sanitize services
+  booking.addedServices = addedServices.map(s => ({
+    name: s.name,
+    price: Number(s.price) || 0,
+    days: Array.isArray(s.days) ? s.days.map(Number) : [],
+    gstEnabled: s.gstEnabled !== false, // default true
+  }));
+
   await booking.save();
 
-  res.json({ success: true, message: "Stay extended successfully", booking });
+  res.json({
+    success: true,
+    message: "Extra services updated successfully",
+    booking,
+  });
 });
 
 export const getRoomServiceBillForBooking = asyncHandler(async (req, res) => {

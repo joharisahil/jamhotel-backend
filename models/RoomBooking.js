@@ -13,6 +13,7 @@ const idProofSchema = new mongoose.Schema({
 const addedServiceSchema = new mongoose.Schema({
   name: String,
   price: Number,
+  gstEnabled: { type: Boolean, default: true },
   days: [Number]
 }, { _id: false });
 
@@ -52,6 +53,11 @@ const roomBookingSchema = new mongoose.Schema({
 
   discount: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
+  discountScope: {
+  type: String,
+  enum: ["TOTAL", "ROOM", "EXTRAS"],
+  default: "TOTAL"
+  },
 
   taxable: Number,
   cgst: Number,

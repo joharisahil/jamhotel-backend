@@ -26,16 +26,21 @@ export const createBooking = async ({
   room_id,
   checkIn,
   checkOut,
-  gstEnabled = true,
+
+  gstEnabled = true,          // ROOM GST
   roundOffEnabled = true,
+
   planCode,
   adults = 1,
   children = 0,
+
   advancePaid = 0,
   advancePaymentMode = "CASH",
+
   discount = 0,
   guestIds = [],
-  addedServices = [],
+  addedServices = [],         // now supports gstEnabled per service
+
   ...rest
 }) => {
   /* ---------------- VALIDATION ---------------- */
@@ -76,6 +81,7 @@ export const createBooking = async ({
       `${p.code}_SINGLE` === planCode ||
       `${p.code}_DOUBLE` === planCode
   );
+
   if (!plan) throw new Error("Invalid plan selected");
 
   const isSingle = String(planCode).includes("SINGLE");
@@ -85,14 +91,22 @@ export const createBooking = async ({
 
   const rawDays =
     (checkOutDT.getTime() - checkInDT.getTime()) / MS_PER_DAY;
+
   const nights = Math.max(1, Math.ceil(rawDays));
 
-  /* ---------------- ROOM + EXTRAS ---------------- */
+  /* ---------------- ROOM TOTAL ---------------- */
 
-  const roomTotal = +(rate * nights).toFixed(2);
+  const roomBase = +(rate * nights).toFixed(2);
 
-  const extrasTotal = addedServices.reduce((sum, s) => {
+  /* ---------------- EXTRA SERVICES ---------------- */
+  // BACKWARD COMPATIBLE:
+  // - if gstEnabled missing on service → GST APPLIED
+  let extrasBase = 0;
+  let extrasGST = 0;
+
+  addedServices.forEach((s) => {
     const price = Number(s.price || 0);
+
     const daysArray =
       Array.isArray(s.days) && s.days.length > 0
         ? s.days
@@ -102,32 +116,79 @@ export const createBooking = async ({
       (d) => d >= 1 && d <= nights
     );
 
-    return sum + price * uniqueDays.length;
-  }, 0);
+    const serviceAmount = price * uniqueDays.length;
+    extrasBase += serviceAmount;
 
-  const baseTotal = +(roomTotal + extrasTotal).toFixed(2);
+    const serviceGSTEnabled =
+      s.gstEnabled === undefined ? true : Boolean(s.gstEnabled);
 
-  /* ---------------- DISCOUNT ---------------- */
+    if (serviceGSTEnabled && gstEnabled) {
+      extrasGST += +(serviceAmount * 0.05).toFixed(2);
+    }
+  });
 
-  const discountPercent = Number(discount || 0);
-  const discountAmount = +(
-    (baseTotal * discountPercent) /
-    100
-  ).toFixed(2);
+/* ---------------- DISCOUNT (SCOPE AWARE) ---------------- */
 
-  const taxable = +(baseTotal - discountAmount).toFixed(2);
+const discountPercent = Number(discount || 0);
+const discountScope = rest.discountScope || "TOTAL";
 
-  /* ---------------- GST ---------------- */
+let discountedRoomBase = roomBase;
+let discountedExtrasBase = extrasBase;
+let discountAmount = 0;
 
-  let cgst = 0;
-  let sgst = 0;
+if (discountPercent > 0) {
 
-  if (gstEnabled) {
-    cgst = +(taxable * 0.025).toFixed(2);
-    sgst = +(taxable * 0.025).toFixed(2);
+  if (discountScope === "TOTAL") {
+    const gross = roomBase + extrasBase;
+    discountAmount = +(gross * discountPercent / 100).toFixed(2);
+
+    discountedRoomBase -= +(discountAmount * roomBase / gross).toFixed(2);
+    discountedExtrasBase -= +(discountAmount * extrasBase / gross).toFixed(2);
   }
 
-  let total = +(taxable + cgst + sgst).toFixed(2);
+  if (discountScope === "ROOM") {
+    discountAmount = +(roomBase * discountPercent / 100).toFixed(2);
+    discountedRoomBase -= discountAmount;
+  }
+
+  if (discountScope === "EXTRAS") {
+    discountAmount = +(extrasBase * discountPercent / 100).toFixed(2);
+    discountedExtrasBase -= discountAmount;
+  }
+}
+
+/* ---------------- GST ---------------- */
+
+let roomGST = 0;
+if (gstEnabled) {
+  roomGST = +(discountedRoomBase * 0.05).toFixed(2);
+}
+
+let extrasGSTFinal = 0;
+addedServices.forEach((s) => {
+  const price = Number(s.price || 0);
+
+  const daysArray =
+    Array.isArray(s.days) && s.days.length > 0
+      ? s.days
+      : Array.from({ length: nights }, (_, i) => i + 1);
+
+  const qty = daysArray.length;
+  const base = price * qty;
+
+  if (s.gstEnabled !== false && gstEnabled) {
+    extrasGSTFinal += +(base * 0.05).toFixed(2);
+  }
+});
+
+const totalGST = +(roomGST + extrasGSTFinal).toFixed(2);
+const cgst = +(totalGST / 2).toFixed(2);
+const sgst = +(totalGST / 2).toFixed(2);
+
+/* ---------------- TOTAL ---------------- */
+
+const taxable = +(discountedRoomBase + discountedExtrasBase).toFixed(2);
+let total = +(taxable + totalGST).toFixed(2);
 
   /* ---------------- ROUND OFF ---------------- */
 
@@ -177,6 +238,7 @@ export const createBooking = async ({
     advancePaymentMode,
 
     discount: discountPercent,
+    discountScope,
     discountAmount,
 
     taxable,
