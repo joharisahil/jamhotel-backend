@@ -71,17 +71,32 @@ export const getTableBill = asyncHandler(async (req, res) => {
 
 export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
-  const { 
-    table_id, 
-    discount = 0, 
+  const {
+    table_id,
+    discount = 0,
     paymentMode = "CASH",
     customerName = "",
-    customerPhone = ""
+    customerPhone = "",
   } = req.body;
 
-  const orders = await Order.find({
+  // 1️⃣ Find ACTIVE table session
+  const session = await TableSession.findOne({
     hotel_id,
     table_id,
+    status: "ACTIVE",
+  });
+
+  if (!session) {
+    return res.status(400).json({
+      success: false,
+      message: "No active table session found",
+    });
+  }
+
+  // 2️⃣ Fetch ONLY orders of this session
+  const orders = await Order.find({
+    hotel_id,
+    tableSession_id: session._id,
     status: "DELIVERED",
     paymentStatus: "PENDING",
   });
@@ -89,22 +104,23 @@ export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
   if (!orders.length) {
     return res.status(400).json({
       success: false,
-      message: "No pending orders",
+      message: "No pending orders for this session",
     });
   }
 
-  let subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
-  let gst = +(orders.reduce((g, o) => g + o.gst, 0).toFixed(2));
-  let totalBeforeDiscount = subtotal + gst;
-  let finalTotal = totalBeforeDiscount - discount;
+  // 3️⃣ Calculate totals
+  const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
+  const gst = +orders.reduce((g, o) => g + o.gst, 0).toFixed(2);
+  const totalBeforeDiscount = subtotal + gst;
+  const finalTotal = totalBeforeDiscount - discount;
 
   const billNumber = "BILL-" + Date.now();
 
-  // Update orders
+  // 4️⃣ Mark orders PAID (session-scoped)
   await Order.updateMany(
     {
-      table_id,
       hotel_id,
+      tableSession_id: session._id,
       status: "DELIVERED",
       paymentStatus: "PENDING",
     },
@@ -115,10 +131,27 @@ export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
       paidAt: new Date(),
     }
   );
-  // Fetch hotel details
-const hotel = await Hotel.findById(hotel_id).select("name address phone gstNumber");
 
-  // Create Transaction
+  // 5️⃣ Close table session
+  await TableSession.findByIdAndUpdate(session._id, {
+    status: "CLOSED",
+    closedAt: new Date(),
+    customerName,
+    customerPhone,
+  });
+
+  // 6️⃣ Reset table
+  await Table.findByIdAndUpdate(table_id, {
+    status: "AVAILABLE",
+    activeSession: null,
+  });
+
+  // 7️⃣ Fetch hotel details
+  const hotel = await Hotel.findById(hotel_id).select(
+    "name address phone gstNumber"
+  );
+
+  // 8️⃣ Create transaction
   await Transaction.create({
     hotel_id,
     type: "CREDIT",
@@ -130,33 +163,33 @@ const hotel = await Hotel.findById(hotel_id).select("name address phone gstNumbe
     createdBy: req.user._id,
   });
 
-  // Create Bill
-// after Transaction.create(...)
-const bill = await Bill.create({
-  hotel_id,
-  billNumber,
-  source: "RESTAURANT",
-  referenceId: billNumber,
-  table_id,
-  customerName,
-  customerPhone,
-  subtotal,
-  gst,
-  discount,
-  finalAmount: finalTotal,
-  paymentMode,
-  createdBy: req.user._id,
-  orders: orders.map((o) => ({
-    order_id: o._id,
-    total: o.total,
-    items: o.items,
-  })),
-});
+  // 9️⃣ Create bill
+  const bill = await Bill.create({
+    hotel_id,
+    billNumber,
+    source: "RESTAURANT",
+    referenceId: billNumber,
+    table_id,
+    customerName,
+    customerPhone,
+    subtotal,
+    gst,
+    discount,
+    finalAmount: finalTotal,
+    paymentMode,
+    createdBy: req.user._id,
+    orders: orders.map((o) => ({
+      order_id: o._id,
+      total: o.total,
+      items: o.items,
+    })),
+  });
 
-const populatedBill = await Bill.findById(bill._id).populate("table_id");
+  const populatedBill = await Bill.findById(bill._id).populate("table_id");
+
   res.json({
     success: true,
-    bill,
+    bill: populatedBill,
     hotel,
   });
 });

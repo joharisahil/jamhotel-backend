@@ -41,28 +41,28 @@ export const createOrder = async (payload) => {
    * -------------------------------- */
   let tableSession = null;
 
-  if (payload.source === "MANUAL" && payload.table_id) {
-    tableSession = await TableSession.findOne({
-      table_id: payload.table_id,
-      hotel_id: payload.hotel_id,
-      status: "ACTIVE"
-    });
+  // if (payload.source === "MANUAL" && payload.table_id) {
+  //   tableSession = await TableSession.findOne({
+  //     table_id: payload.table_id,
+  //     hotel_id: payload.hotel_id,
+  //     status: "ACTIVE"
+  //   });
 
-      if (!tableSession) {
-    tableSession = await TableSession.create({
-      hotel_id: payload.hotel_id,
-      table_id: payload.table_id,
-    });
+  //     if (!tableSession) {
+  //   tableSession = await TableSession.create({
+  //     hotel_id: payload.hotel_id,
+  //     table_id: payload.table_id,
+  //   });
 
-    await Table.findByIdAndUpdate(payload.table_id, {
-      status: "OCCUPIED",
-      activeSession: {
-        sessionId: tableSession._id,
-        startedAt: tableSession.startedAt,
-      },
-    });
-  }
-  }
+  //   await Table.findByIdAndUpdate(payload.table_id, {
+  //     status: "OCCUPIED",
+  //     activeSession: {
+  //       sessionId: tableSession._id,
+  //       startedAt: tableSession.startedAt,
+  //     },
+  //   });
+  // }
+  // }
 
   /* --------------------------------
    * BUILD ITEMS
@@ -98,12 +98,11 @@ export const createOrder = async (payload) => {
 
 if (payload.table_id) {
   tableSession = await TableSession.findOne({
-    table_id: payload.table_id,
     hotel_id: payload.hotel_id,
-    status: "ACTIVE"
+    table_id: payload.table_id,
+    status: "ACTIVE",
   });
 
-  // Auto-create session if QR order is first order
   if (!tableSession) {
     tableSession = await TableSession.create({
       hotel_id: payload.hotel_id,
@@ -115,7 +114,7 @@ if (payload.table_id) {
       activeSession: {
         sessionId: tableSession._id,
         startedAt: tableSession.startedAt,
-      }
+      },
     });
   }
 }

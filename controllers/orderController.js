@@ -49,42 +49,27 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;
 
-  // 1️⃣ Find active session for this table
   const session = await TableSession.findOne({
     hotel_id,
     table_id: tableId,
-    status: "ACTIVE"
+    status: "ACTIVE",
   });
 
   if (!session) {
-    return res.json({
-      success: true,
-      orders: [] // no active session = no orders
-    });
+    return res.json({ success: true, orders: [] });
   }
 
-    await Order.updateMany(
-    {
-      hotel_id,
-      table_id: tableId,
-      tableSession_id: { $exists: false },
-    },
-    {
-      $set: { tableSession_id: session._id },
-    }
-  );
-
-  // 2️⃣ Fetch orders linked to this session
   const orders = await Order.find({
     hotel_id,
-    tableSession_id: session._id
+    tableSession_id: session._id,
   })
-  .populate("table_id", "name")
-  .sort({ createdAt: 1 });
+    .populate("table_id", "name")
+    .sort({ createdAt: 1 });
 
   res.json({
     success: true,
     sessionId: session._id,
-    orders
+    orders,
   });
 });
+

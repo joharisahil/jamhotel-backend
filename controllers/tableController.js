@@ -74,18 +74,11 @@ export const tableOverview = async (req, res) => {
     let total = 0;
     let sources = new Set();
 
-    if (table.activeSession?.sessionId) {
+      if (table.activeSession?.sessionId) {
       orders = await Order.find({
-  hotel_id,
-  $or: [
-    { tableSession_id: table.activeSession.sessionId },
-    {
-      tableSession_id: { $exists: false },
-      table_id: table._id,
-    },
-  ],
-});
-
+        hotel_id,
+        tableSession_id: table.activeSession.sessionId,
+      });
 
       orders.forEach((o) => {
         total += o.total;
