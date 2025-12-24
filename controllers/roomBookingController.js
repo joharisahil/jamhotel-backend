@@ -264,6 +264,28 @@ export const cancelBooking = asyncHandler(async (req, res) => {
   if (String(booking.hotel_id) !== String(req.user.hotel_id))
     return res.status(403).json({ success: false, message: "Forbidden" });
 
+  /* -----------------------------------------
+ * 🔒 BLOCK IF ANY FOOD / ROOM-SERVICE ORDER EXISTS
+ * ----------------------------------------- */
+const hasOrders = await Order.exists({
+  hotel_id: booking.hotel_id,
+  room_id: booking.room_id,
+  status: { $nin: ["CANCELLED"] },
+  createdAt: {
+    $gte: booking.checkIn,
+    $lte: booking.checkOut,
+  },
+});
+
+if (hasOrders) {
+  return res.status(409).json({
+    success: false,
+    code: "BOOKING_HAS_ORDERS",
+    message:
+      "Cannot cancel booking because food or room-service orders exist. Please checkout the guest instead.",
+  });
+}
+
   booking.status = "CANCELLED";
   await booking.save();
 

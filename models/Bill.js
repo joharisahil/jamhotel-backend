@@ -49,6 +49,16 @@ const billSchema = new mongoose.Schema(
       default: "",
     },
 
+    customerCompanyName: {
+      type: String,
+      default: "",
+    },
+
+    customerCompanyGSTIN: {
+      type: String,
+      default: "",
+    },
+
     orders: [
       {
         order_id: { type: mongoose.Schema.Types.ObjectId, ref: "Order" },
@@ -69,18 +79,18 @@ const billSchema = new mongoose.Schema(
     },
 
     payments: [
-  {
-    mode: {
-      type: String,
-      enum: ["CASH", "UPI", "CARD", "OTHER"],
-      required: true
-    },
-    amount: {
-      type: Number,
-      required: true
-    }
-  }
-],
+      {
+        mode: {
+          type: String,
+          enum: ["CASH", "UPI", "CARD", "OTHER"],
+          required: true
+        },
+        amount: {
+          type: Number,
+          required: true
+        }
+      }
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
