@@ -8,6 +8,133 @@ import * as transactionService from "./transactionService.js"; // adjust path if
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
+const normalizeServiceDays = (booking, nights) => {
+  booking.addedServices = booking.addedServices.map(s => {
+    // If days already defined → keep them
+    if (Array.isArray(s.days) && s.days.length > 0) {
+      return s;
+    }
+
+    // 🔒 Freeze service to original stay length (ONE-TIME)
+    return {
+      ...s,
+      days: [1], // applies once, NOT per-night
+    };
+  });
+};
+
+export const recalculateRoomBilling = async (booking, room) => {
+  const checkInDT = new Date(booking.checkIn);
+  const checkOutDT = new Date(booking.checkOut);
+
+  const rawDays =
+    (checkOutDT.getTime() - checkInDT.getTime()) / MS_PER_DAY;
+
+  const nights = Math.max(1, Math.ceil(rawDays));
+
+  // 🔐 FREEZE SERVICE DAYS (CRITICAL FIX)
+  normalizeServiceDays(booking, nights);
+
+  // ---------------- ROOM RATE ----------------
+  const [planCode, type] = String(booking.planCode).split("_");
+  const plan = room.plans.find(p => p.code === planCode);
+
+  if (!plan) throw new Error("Invalid plan during recalculation");
+
+  const roomRate =
+    type === "SINGLE" ? plan.singlePrice : plan.doublePrice;
+
+  const roomBase = +(roomRate * nights).toFixed(2);
+
+  // ---------------- EXTRA SERVICES ----------------
+  let extrasBase = 0;
+
+  booking.addedServices.forEach(s => {
+    const validDays = [...new Set(s.days)].filter(
+      d => d >= 1 && d <= nights
+    );
+
+    extrasBase += Number(s.price || 0) * validDays.length;
+  });
+
+  // ---------------- DISCOUNT ----------------
+  const discountPercent = Number(booking.discount || 0);
+  const discountScope = booking.discountScope || "TOTAL";
+
+  let discountedRoomBase = roomBase;
+  let discountedExtrasBase = extrasBase;
+  let discountAmount = 0;
+
+  if (discountPercent > 0) {
+    const gross = roomBase + extrasBase || 1;
+
+    if (discountScope === "TOTAL") {
+      discountAmount = +(gross * discountPercent / 100).toFixed(2);
+      discountedRoomBase -= +(discountAmount * roomBase / gross).toFixed(2);
+      discountedExtrasBase -= +(discountAmount * extrasBase / gross).toFixed(2);
+    }
+
+    if (discountScope === "ROOM") {
+      discountAmount = +(roomBase * discountPercent / 100).toFixed(2);
+      discountedRoomBase -= discountAmount;
+    }
+
+    if (discountScope === "EXTRAS") {
+      discountAmount = +(extrasBase * discountPercent / 100).toFixed(2);
+      discountedExtrasBase -= discountAmount;
+    }
+  }
+
+  // ---------------- GST ----------------
+  let gstBase = 0;
+
+  if (booking.gstEnabled) {
+    gstBase += discountedRoomBase;
+
+    booking.addedServices.forEach(s => {
+      if (s.gstEnabled !== false) {
+        const validDays = s.days.filter(d => d >= 1 && d <= nights);
+        const base = Number(s.price || 0) * validDays.length;
+
+        const ratio =
+          extrasBase > 0 ? discountedExtrasBase / extrasBase : 0;
+
+        gstBase += base * ratio;
+      }
+    });
+  }
+
+  const totalGST = +(gstBase * 0.05).toFixed(2);
+  const cgst = +(totalGST / 2).toFixed(2);
+  const sgst = +(totalGST / 2).toFixed(2);
+
+  const taxable = +(discountedRoomBase + discountedExtrasBase).toFixed(2);
+
+  // ---------------- TOTAL / ROUNDING ----------------
+  let total = taxable + totalGST;
+  let roundOffAmount = 0;
+
+  if (booking.roundOffEnabled) {
+    const rounded = Math.round(total);
+    roundOffAmount = +(rounded - total).toFixed(2);
+    total = rounded;
+  }
+
+  const balanceDue = Math.max(
+    0,
+    +(total - Number(booking.advancePaid || 0)).toFixed(2)
+  );
+
+  // ---------------- ASSIGN BACK ----------------
+  booking.taxable = taxable;
+  booking.cgst = cgst;
+  booking.sgst = sgst;
+  booking.discountAmount = discountAmount;
+  booking.roundOffAmount = roundOffAmount;
+  booking.balanceDue = balanceDue;
+};
+
+
 /**
  * createBooking
  *
@@ -29,6 +156,7 @@ export const createBooking = async ({
 
   gstEnabled = true,          // ROOM GST
   roundOffEnabled = true,
+  roundOffAmount = 0,
 
   planCode,
   adults = 1,
@@ -40,6 +168,8 @@ export const createBooking = async ({
   discount = 0,
   guestIds = [],
   addedServices = [],         // now supports gstEnabled per service
+  taxable = 0,        // ✅ ADD
+  balanceDue = 0,
 
   ...rest
 }) => {
@@ -157,53 +287,42 @@ if (discountPercent > 0) {
   }
 }
 
-/* ---------------- GST ---------------- */
+/* ---------------- GST (INDUSTRY CORRECT) ---------------- */
 
-let roomGST = 0;
+let gstBase = 0;
+
+// 1️⃣ Room GST (after discount)
 if (gstEnabled) {
-  roomGST = +(discountedRoomBase * 0.05).toFixed(2);
+  gstBase += discountedRoomBase;
 }
 
-let extrasGSTFinal = 0;
-addedServices.forEach((s) => {
-  const price = Number(s.price || 0);
+// 2️⃣ Extra services GST (only GST-enabled services, after discount)
+if (gstEnabled) {
+  addedServices.forEach((s) => {
+    if (s.gstEnabled !== false) {
+      const daysArray =
+        Array.isArray(s.days) && s.days.length > 0
+          ? s.days
+          : Array.from({ length: nights }, (_, i) => i + 1);
 
-  const daysArray =
-    Array.isArray(s.days) && s.days.length > 0
-      ? s.days
-      : Array.from({ length: nights }, (_, i) => i + 1);
+      const originalServiceBase = s.price * daysArray.length;
 
-  const qty = daysArray.length;
-  const base = price * qty;
+      // Apply discount proportionally ONLY if extras had discount
+      let discountedServiceBase = originalServiceBase;
 
-  if (s.gstEnabled !== false && gstEnabled) {
-    extrasGSTFinal += +(base * 0.05).toFixed(2);
-  }
-});
+      if (extrasBase > 0) {
+        const discountRatio = discountedExtrasBase / extrasBase;
+        discountedServiceBase = originalServiceBase * discountRatio;
+      }
 
-const totalGST = +(roomGST + extrasGSTFinal).toFixed(2);
+      gstBase += discountedServiceBase;
+    }
+  });
+}
+
+const totalGST = +(gstBase * 0.05).toFixed(2);
 const cgst = +(totalGST / 2).toFixed(2);
 const sgst = +(totalGST / 2).toFixed(2);
-
-/* ---------------- TOTAL ---------------- */
-
-const taxable = +(discountedRoomBase + discountedExtrasBase).toFixed(2);
-let total = +(taxable + totalGST).toFixed(2);
-
-  /* ---------------- ROUND OFF ---------------- */
-
-  let roundOffAmount = 0;
-  let finalTotal = total;
-
-  if (roundOffEnabled) {
-    finalTotal = Math.round(total);
-    roundOffAmount = +(finalTotal - total).toFixed(2);
-  }
-
-  const balanceDue = Math.max(
-    0,
-    +(finalTotal - Number(advancePaid || 0)).toFixed(2)
-  );
 
   /* ---------------- CREATE BOOKING ---------------- */
 
@@ -241,7 +360,7 @@ let total = +(taxable + totalGST).toFixed(2);
     discountScope,
     discountAmount,
 
-    taxable,
+    taxable: +(discountedRoomBase + discountedExtrasBase).toFixed(2),
     cgst,
     sgst,
 
@@ -277,118 +396,210 @@ let total = +(taxable + totalGST).toFixed(2);
  * - includes food orders (paymentStatus:PENDING && status:DELIVERED) in invoice, marks them PAID
  * - creates RoomInvoice, updates booking (CHECKEDOUT), frees room, creates transaction
  */
+// bookingService.js - Fixed checkoutBooking function
+
 export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const booking = await RoomBooking.findById(bookingId).session(session);
+    // Get booking with full room details
+    const booking = await RoomBooking.findById(bookingId)
+      .populate('room_id')
+      .session(session);
+    
     if (!booking) throw new Error("Booking not found");
 
-    const room = await Room.findById(booking.room_id).session(session);
+    const room = booking.room_id;
     if (!room) throw new Error("Room not found");
 
-    // actual checkout time: use current time (server now)
+    // ========================================
+    // ACTUAL CHECKOUT TIME
+    // ========================================
     const actualCheckoutTime = new Date();
 
-    // Determine plan & rate
+    // ========================================
+    // CALCULATE NIGHTS (using actual checkout)
+    // ========================================
+    const checkInDT = new Date(booking.checkIn);
+    const checkOutDT = new Date(booking.checkOut); // Use booking's checkOut (which may have been edited)
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const rawDays = (checkOutDT.getTime() - checkInDT.getTime()) / MS_PER_DAY;
+    const nights = Math.max(1, Math.ceil(rawDays));
+
+    // ========================================
+    // ROOM RATE (from current booking)
+    // ========================================
     const plan = room.plans.find(p =>
       `${p.code}_SINGLE` === booking.planCode || `${p.code}_DOUBLE` === booking.planCode
     );
     if (!plan) throw new Error("Invalid plan");
 
-    const rate = String(booking.planCode).includes("SINGLE") ? plan.singlePrice : plan.doublePrice;
+    const roomRate = String(booking.planCode).includes("SINGLE") 
+      ? plan.singlePrice 
+      : plan.doublePrice;
 
-    // Calculate nights using actual checkout time
-    const checkInDT = new Date(booking.checkIn);
-    const rawDays = (actualCheckoutTime.getTime() - checkInDT.getTime()) / MS_PER_DAY;
-    const nights = Math.max(1, Math.ceil(rawDays));
+    // ========================================
+    // ROOM STAY AMOUNT
+    // ========================================
+    const stayAmount = +(roomRate * nights).toFixed(2);
 
-    // Stay amount (rate * nights)
-    const stayAmount = +(rate * nights).toFixed(2);
-
-    // Extra services: compute based on booking.addedServices days array (bounded by nights)
-    const extraTotal = (booking.addedServices || []).reduce((s, ex) => {
+    // ========================================
+    // EXTRA SERVICES (from current booking.addedServices)
+    // ========================================
+    const extraServices = (booking.addedServices || []).map(ex => {
       const price = Number(ex.price || 0);
-      const daysArray = Array.isArray(ex.days) && ex.days.length > 0 ? ex.days : Array.from({ length: nights }, (_, i) => i + 1);
+      const daysArray = Array.isArray(ex.days) && ex.days.length > 0 
+        ? ex.days 
+        : Array.from({ length: nights }, (_, i) => i + 1);
+      
       const uniqueDays = [...new Set(daysArray)].filter(d => d >= 1 && d <= nights);
-      return s + price * uniqueDays.length;
+      
+      return {
+        name: ex.name,
+        price: ex.price,
+        gstEnabled: ex.gstEnabled !== false, // default true
+        days: uniqueDays
+      };
+    });
+
+    // Calculate extras total
+    const extrasBase = extraServices.reduce((sum, ex) => {
+      return sum + (ex.price * ex.days.length);
     }, 0);
 
-    const stayTotal = +(stayAmount + extraTotal).toFixed(2);
+    const extrasGST = extraServices.reduce((sum, ex) => {
+      if (ex.gstEnabled) {
+        const base = ex.price * ex.days.length;
+        return sum + (base * 0.05);
+      }
+      return sum;
+    }, 0);
 
-    // GST on stayTotal if booking.gstEnabled
+    const roomBase = stayAmount + extrasBase;
+
+    // ========================================
+    // ROOM GST (use booking.gstEnabled)
+    // ========================================
     let stayCGST = 0;
     let staySGST = 0;
     let stayGST = 0;
+
     if (booking.gstEnabled) {
-      stayCGST = +(stayTotal * 0.025).toFixed(2);
-      staySGST = +(stayTotal * 0.025).toFixed(2);
+      const roomGST = +(stayAmount * 0.05).toFixed(2);
+      stayCGST = +((roomGST / 2) + (extrasGST / 2)).toFixed(2);
+      staySGST = +((roomGST / 2) + (extrasGST / 2)).toFixed(2);
       stayGST = +(stayCGST + staySGST).toFixed(2);
     }
 
-    // 2) Food orders that belong to this room and are delivered but pending payment
-    const foodOrders = await Order.find({
-      room_id: booking.room_id,
-      hotel_id: booking.hotel_id,
-      paymentStatus: "PENDING",
-      status: "DELIVERED"
-    }).session(session);
+    const roomGross = roomBase + stayGST;
 
-    const foodSubtotal = foodOrders.reduce((s, o) => s + Number(o.subtotal || 0), 0);
-    const foodGST = foodOrders.reduce((s, o) => s + Number(o.gst || 0), 0);
-    const foodTotal = +(foodSubtotal + foodGST).toFixed(2);
-
-    // 3) Apply discount ONLY on room (stayTotal + stayGST)
+    // ========================================
+    // ROOM DISCOUNT (use booking.discount)
+    // ========================================
     const discountPercent = Number(booking.discount || 0);
-    const discountBase = +(stayTotal + stayGST).toFixed(2);
-    const discountAmount = +((discountBase * discountPercent) / 100).toFixed(2);
+    const discountAmount = +((roomGross * discountPercent) / 100).toFixed(2);
+    const roomNet = roomGross - discountAmount;
 
-    // Final amount = (room after discount) + food total
-    const finalRoomAfterDiscount = +(discountBase - discountAmount).toFixed(2);
-    const finalAmount = +(finalRoomAfterDiscount + foodTotal).toFixed(2);
+    // ================= FOOD ORDERS =================
+const foodOrders = await Order.find({
+  room_id: booking.room_id,
+  hotel_id: booking.hotel_id,
+  paymentStatus: "PENDING",
+  status: "DELIVERED",
+  createdAt: { $gte: booking.checkIn, $lt: booking.checkOut }
+}).session(session);
 
-    // Remaining balance considering advancePaid on booking
-    const balanceDue = +(finalAmount - (booking.advancePaid || 0)).toFixed(2);
+// Base subtotal (no GST)
+const foodSubtotalRaw = foodOrders.reduce(
+  (s, o) => s + Number(o.subtotal || 0),
+  0
+);
 
-    let updatedBalance = balanceDue;
+// Discount BEFORE GST
+const foodDiscountPercent = Number(booking.foodDiscount || 0);
+const foodDiscountAmount = +((foodSubtotalRaw * foodDiscountPercent) / 100).toFixed(2);
+const foodSubtotalAfterDiscount = +(foodSubtotalRaw - foodDiscountAmount).toFixed(2);
 
+// GST AFTER discount
+let foodGST = 0;
+if (booking.foodGSTEnabled) {
+  foodGST = +(foodSubtotalAfterDiscount * 0.05).toFixed(2);
+}
+
+const foodCGST = +(foodGST / 2).toFixed(2);
+const foodSGST = +(foodGST / 2).toFixed(2);
+const foodTotal = +(foodSubtotalAfterDiscount + foodGST).toFixed(2);
+
+
+    // ========================================
+    // FINAL TOTAL
+    // ========================================
+    const grandTotal = +(roomNet + foodTotal).toFixed(2);
+    const advancePaid = Number(booking.advancePaid || 0);
+    let balanceDue = +(grandTotal - advancePaid).toFixed(2);
+
+    // ========================================
+    // FINAL PAYMENT HANDLING
+    // ========================================
     if (finalPaymentData.finalPaymentReceived) {
-      updatedBalance = 0;
-
       booking.finalPaymentReceived = true;
-      booking.finalPaymentMode =
-        finalPaymentData.finalPaymentMode || "CASH";
-
-      // Auto-pay full remaining balance
+      booking.finalPaymentMode = finalPaymentData.finalPaymentMode || "CASH";
       booking.finalPaymentAmount = balanceDue;
+      balanceDue = 0;
     }
-
 
     const invoiceNumber = "ROOM-" + Date.now();
 
-    // 4) Create invoice document (inside session)
+    // ========================================
+    // CREATE INVOICE (store complete snapshot)
+    // ========================================
     const invoicePayload = {
       hotel_id: booking.hotel_id,
       bookingId: booking._id,
       room_id: room._id,
-      roomNumber: room.number, 
+      roomNumber: room.number,
+      roomType: room.type,
       invoiceNumber,
 
+      // Guest info
       guestName: booking.guestName,
       guestPhone: booking.guestPhone,
+      guestCity: booking.guestCity,
+      guestNationality: booking.guestNationality,
+      guestAddress: booking.guestAddress,
+      adults: booking.adults,
+      children: booking.children,
 
+      // Company info
+      companyName: booking.companyName,
+      companyGSTIN: booking.companyGSTIN,
+      companyAddress: booking.companyAddress,
+
+      // Stay details
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut,
       stayNights: nights,
-      roomRate: rate,
-      stayAmount,
-      extraServices: booking.addedServices || [],
+      planCode: booking.planCode,
 
+      // Room charges
+      roomRate,
+      stayAmount,
+      extraServices,
+
+      // Room GST
       stayCGST,
       staySGST,
       stayGST,
-
       gstEnabled: booking.gstEnabled,
 
+      // Room discount
+      discountPercent,
+      discountAmount,
+      roomGross,
+      roomNet,
+
+      // Food orders
       foodOrders: foodOrders.map(o => ({
         order_id: o._id,
         items: o.items,
@@ -397,19 +608,25 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
         total: o.total
       })),
 
-      foodSubtotal,
+      foodSubtotalRaw,
+      foodDiscountPercent,
+      foodDiscountAmount,
+      foodSubtotalAfterDiscount,
+      foodCGST,
+      foodSGST,
       foodGST,
       foodTotal,
+      foodGSTEnabled: booking.foodGSTEnabled,
 
-      discountPercent,
-      discountAmount,
+      // Final amounts
+      grandTotal,
+      totalAmount: grandTotal, // Keep both for compatibility
+      advancePaid,
+      balanceDue,
 
-      totalAmount: finalAmount,
-      advancePaid: booking.advancePaid,
-      balanceDue: updatedBalance,
-
-      advancePaymentMode: booking.advancePaymentMode, 
-      finalPaymentMode: booking.finalPaymentMode,     
+      // Payment details
+      advancePaymentMode: booking.advancePaymentMode,
+      finalPaymentMode: booking.finalPaymentMode,
       finalPaymentReceived: booking.finalPaymentReceived,
       finalPaymentAmount: booking.finalPaymentAmount,
 
@@ -418,7 +635,9 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
 
     const invoice = await RoomInvoice.create([invoicePayload], { session });
 
-    // 5) Mark food orders as PAID
+    // ========================================
+    // MARK FOOD ORDERS AS PAID
+    // ========================================
     if (foodOrders.length > 0) {
       await Order.updateMany(
         { _id: { $in: foodOrders.map(o => o._id) } },
@@ -427,20 +646,29 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
       );
     }
 
-    // 6) Update booking: status + balanceDue + actual checkOut (store actual check out to booking.checkOut so record shows actual)
+    // ========================================
+    // UPDATE BOOKING STATUS
+    // ========================================
     booking.status = "CHECKEDOUT";
-    booking.balanceDue = updatedBalance;
-    booking.checkOut = actualCheckoutTime; // store real checkout on booking for record (important)
+    booking.balanceDue = balanceDue;
+    booking.actualCheckoutTime = actualCheckoutTime; // Store actual checkout time
     await booking.save({ session });
 
-    // 7) Release room
-    await Room.findByIdAndUpdate(booking.room_id, { status: "AVAILABLE" }).session(session);
+    // ========================================
+    // RELEASE ROOM
+    // ========================================
+    await Room.findByIdAndUpdate(
+      booking.room_id, 
+      { status: "AVAILABLE" }
+    ).session(session);
 
-    // 8) Create transaction entry for hotel ledger
+    // ========================================
+    // CREATE TRANSACTION
+    // ========================================
     await transactionService.createTransaction(booking.hotel_id, {
       type: "CREDIT",
       source: "ROOM",
-      amount: finalAmount,
+      amount: grandTotal,
       referenceId: invoice[0]._id,
       description: `Room + Food invoice for Room ${room.number}`
     });
@@ -448,7 +676,6 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
     await session.commitTransaction();
     session.endSession();
 
-    // return invoice object
     return invoice[0];
 
   } catch (e) {

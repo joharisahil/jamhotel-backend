@@ -1,3 +1,5 @@
+// models/RoomBooking.js - Add actualCheckoutTime field
+
 import mongoose from "mongoose";
 
 const idProofSchema = new mongoose.Schema({
@@ -54,9 +56,9 @@ const roomBookingSchema = new mongoose.Schema({
   discount: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
   discountScope: {
-  type: String,
-  enum: ["TOTAL", "ROOM", "EXTRAS"],
-  default: "TOTAL"
+    type: String,
+    enum: ["TOTAL", "ROOM", "EXTRAS"],
+    default: "TOTAL"
   },
 
   taxable: Number,
@@ -84,14 +86,17 @@ const roomBookingSchema = new mongoose.Schema({
 
   balanceDue: { type: Number, default: 0 },
 
-  // NEW FIELDS FOR FINAL PAYMENT AT CHECKOUT
+  // Final payment fields
   finalPaymentReceived: { type: Boolean, default: false },
   finalPaymentMode: {
     type: String,
     enum: ["CASH", "UPI", "CARD", "BANK_TRANSFER", "ONLINE", "OTHER"],
     default: null
   },
-  finalPaymentAmount: { type: Number, default: 0 }
+  finalPaymentAmount: { type: Number, default: 0 },
+
+  // NEW FIELD - stores when checkout actually happened
+  actualCheckoutTime: { type: Date, default: null }
 
 }, { timestamps: true });
 
