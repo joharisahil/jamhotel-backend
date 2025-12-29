@@ -77,6 +77,8 @@ export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
     paymentMode = "CASH",
     customerName = "",
     customerPhone = "",
+    customerCompanyName = "",
+    customerCompanyGSTIN = ""
   } = req.body;
 
   // 1️⃣ Find ACTIVE table session
@@ -97,7 +99,6 @@ export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
   const orders = await Order.find({
     hotel_id,
     tableSession_id: session._id,
-    status: "DELIVERED",
     paymentStatus: "PENDING",
   });
 
@@ -121,7 +122,6 @@ export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
     {
       hotel_id,
       tableSession_id: session._id,
-      status: "DELIVERED",
       paymentStatus: "PENDING",
     },
     {
@@ -172,6 +172,8 @@ export const finalizeRestaurantBill = asyncHandler(async (req, res) => {
     table_id,
     customerName,
     customerPhone,
+    customerCompanyName,
+    customerCompanyGSTIN,
     subtotal,
     gst,
     discount,

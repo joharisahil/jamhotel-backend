@@ -2,6 +2,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import Table from "../models/Table.js";
 import Order from "../models/Order.js";
 import TableSession from "../models/TableSession.js";
+import { autoCloseEmptySession } from "../utils/autoCloseEmptyTableSession.js";
 import mongoose from "mongoose";
 
 export const createTable = asyncHandler(async (req, res) => {
@@ -102,10 +103,22 @@ export const tableOverview = async (req, res) => {
 export const startTableSession = async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;
+
+  await autoCloseEmptySession(hotel_id, tableId);
+
   const table = await Table.findOne({ _id: tableId, hotel_id });
 
   if (!table)
     return res.status(404).json({ success: false, message: "Table not found" });
+
+  if (table.activeSession?.sessionId) {
+    const session = await TableSession.findById(table.activeSession.sessionId);
+    if (!session || session.status === "CLOSED") {
+      table.status = "AVAILABLE";
+      table.activeSession = null;
+      await table.save();
+    }
+  }
 
   if (table.status !== "AVAILABLE")
     return res.json({ success: true, table });
