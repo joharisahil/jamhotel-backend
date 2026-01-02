@@ -289,6 +289,9 @@ export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
     hotel_id,
     status: { $in: ["OCCUPIED", "CHECKEDIN"] }
   });
+  if (booking.status === "CHECKEDOUT") {
+  throw new Error("Cannot add food to checked-out booking");
+}
 
   if (!booking) {
     return res.status(404).json({
@@ -310,6 +313,7 @@ export const transferRestaurantBillToRoom = asyncHandler(async (req, res) => {
   const order = await Order.create({
     hotel_id,
     room_id: booking.room_id,
+    booking_id: booking._id,
     source: "RESTAURANT_TRANSFER",
     items: orderItems,
     subtotal,

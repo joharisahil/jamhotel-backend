@@ -503,6 +503,7 @@ export const checkoutBooking = async (bookingId, userId, finalPaymentData = {}) 
 
     // ================= FOOD ORDERS =================
 const foodOrders = await Order.find({
+  booking_id: booking._id,
   room_id: booking.room_id,
   hotel_id: booking.hotel_id,
   paymentStatus: "PENDING",
@@ -641,7 +642,7 @@ const foodTotal = +(foodSubtotalAfterDiscount + foodGST).toFixed(2);
     if (foodOrders.length > 0) {
       await Order.updateMany(
         { _id: { $in: foodOrders.map(o => o._id) } },
-        { paymentStatus: "PAID" },
+        { paymentStatus: "PAID", paidAt: checkOutDT },
         { session }
       );
     }

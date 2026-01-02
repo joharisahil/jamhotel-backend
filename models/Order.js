@@ -13,6 +13,11 @@ const orderSchema = new mongoose.Schema({
   hotel_id: { type: mongoose.Schema.Types.ObjectId, ref: "Hotel", required: true },
   table_id: { type: mongoose.Schema.Types.ObjectId, ref: "Table" },
   room_id: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
+  booking_id: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "RoomBooking",
+  default: null
+  },
 
   guestName: String,
   guestPhone: String,
