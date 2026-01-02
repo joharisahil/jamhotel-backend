@@ -467,6 +467,18 @@ if (payments.length === 1) {
 
 const bill = await Bill.create(billData);
 
+await Order.updateMany(
+  {
+    tableSession_id: session._id,
+    paymentStatus: "PENDING"
+  },
+  {
+    paymentStatus: "PAID",
+    paidAt: new Date(),
+    billNumber: bill.billNumber
+  }
+);
+
   for (const p of payments) {
   await transactionService.createTransaction(hotel_id, {
     type: "CREDIT",

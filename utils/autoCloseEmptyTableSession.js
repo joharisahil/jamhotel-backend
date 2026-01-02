@@ -13,6 +13,7 @@ export const autoCloseEmptySession = async (hotel_id, table_id) => {
 
   const orderCount = await Order.countDocuments({
     tableSession_id: session._id,
+    paymentStatus: "PENDING"
   });
 
   // 🔥 CLOSE EMPTY SESSION
