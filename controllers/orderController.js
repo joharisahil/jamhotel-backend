@@ -49,6 +49,7 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;
 
+  // ✅ FIX: Only find ACTIVE sessions
   const session = await TableSession.findOne({
     hotel_id,
     table_id: tableId,
@@ -56,9 +57,10 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
   });
 
   if (!session) {
-    return res.json({ success: true, orders: [] });
+    return res.json({ success: true, orders: [], sessionId: null });
   }
 
+  // ✅ FIX: Only get pending orders from this ACTIVE session
   const orders = await Order.find({
     hotel_id,
     tableSession_id: session._id,

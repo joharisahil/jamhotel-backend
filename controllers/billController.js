@@ -374,7 +374,18 @@ export const checkoutTable = asyncHandler(async (req, res) => {
     });
   }
 
-  const session = await TableSession.findById(table.activeSession.sessionId);
+  // ✅ FIX: Verify session is ACTIVE
+  const session = await TableSession.findOne({
+    _id: table.activeSession.sessionId,
+    status: "ACTIVE"
+  });
+
+  if (!session) {
+    return res.status(400).json({
+      success: false,
+      message: "Table session is not active"
+    });
+  }
 
   let items = [];
   let subtotal = 0;
@@ -396,14 +407,16 @@ export const checkoutTable = asyncHandler(async (req, res) => {
     gst = frontendGst;
     finalAmount = frontendFinalAmount;
   } else {
+    // ✅ FIX: Only get pending orders from this specific ACTIVE session
     const orders = await Order.find({
-      tableSession_id: session._id
+      tableSession_id: session._id,
+      paymentStatus: "PENDING"
     });
 
     if (!orders.length) {
       return res.status(400).json({
         success: false,
-        message: "No orders in this session"
+        message: "No pending orders in this session"
       });
     }
 
@@ -422,85 +435,90 @@ export const checkoutTable = asyncHandler(async (req, res) => {
   const billNumber = String(counter.seq).padStart(6, "0");
 
   if (!payments.length) {
-  return res.status(400).json({
-    success: false,
-    message: "Payment details required"
-  });
-}
-
-const paidAmount = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-
-if (+paidAmount.toFixed(2) !== +finalAmount.toFixed(2)) {
-  return res.status(400).json({
-    success: false,
-    message: "Payment split does not match final amount"
-  });
-}
-
-const billData = {
-  hotel_id,
-  billNumber,
-  source: "RESTAURANT",
-  table_id: table._id,
-  customerName: customerName || "",
-  customerPhone: customerPhone || "",
-  customerCompanyName: customerCompanyName || "",
-  customerCompanyGSTIN: customerCompanyGSTIN || "",
-  subtotal,
-  gst,
-  discount,
-  finalAmount,
-  payments,
-  orders: [
-    {
-      order_id: items[0]?.order_id || null,
-      total: finalAmount,
-      items
-    }
-  ],
-  createdBy: req.user._id
-};
-
-if (payments.length === 1) {
-  billData.paymentMode = payments[0].mode;
-}
-
-const bill = await Bill.create(billData);
-
-await Order.updateMany(
-  {
-    tableSession_id: session._id,
-    paymentStatus: "PENDING"
-  },
-  {
-    paymentStatus: "PAID",
-    paidAt: new Date(),
-    billNumber: bill.billNumber
+    return res.status(400).json({
+      success: false,
+      message: "Payment details required"
+    });
   }
-);
+
+  const paidAmount = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+  if (+paidAmount.toFixed(2) !== +finalAmount.toFixed(2)) {
+    return res.status(400).json({
+      success: false,
+      message: "Payment split does not match final amount"
+    });
+  }
+
+  const billData = {
+    hotel_id,
+    billNumber,
+    source: "RESTAURANT",
+    table_id: table._id,
+    customerName: customerName || "",
+    customerPhone: customerPhone || "",
+    customerCompanyName: customerCompanyName || "",
+    customerCompanyGSTIN: customerCompanyGSTIN || "",
+    subtotal,
+    gst,
+    discount,
+    finalAmount,
+    payments,
+    orders: [
+      {
+        order_id: items[0]?.order_id || null,
+        total: finalAmount,
+        items
+      }
+    ],
+    createdBy: req.user._id
+  };
+
+  if (payments.length === 1) {
+    billData.paymentMode = payments[0].mode;
+  }
+
+  const bill = await Bill.create(billData);
+
+  // ✅ FIX: Update ONLY orders from this session
+  await Order.updateMany(
+    {
+      tableSession_id: session._id,
+      paymentStatus: "PENDING"
+    },
+    {
+      paymentStatus: "PAID",
+      paidAt: new Date(),
+      billNumber: bill.billNumber
+    }
+  );
 
   for (const p of payments) {
-  await transactionService.createTransaction(hotel_id, {
-    type: "CREDIT",
-    source: "RESTAURANT",
-    amount: p.amount,
-    paymentMode: p.mode,
-    referenceId: bill._id,
-    description: `Restaurant Bill #${billNumber} (${p.mode})`
+    await transactionService.createTransaction(hotel_id, {
+      type: "CREDIT",
+      source: "RESTAURANT",
+      amount: p.amount,
+      paymentMode: p.mode,
+      referenceId: bill._id,
+      description: `Restaurant Bill #${billNumber} (${p.mode})`
+    });
+  }
+
+  // ✅ FIX: Close this specific session
+  await TableSession.findByIdAndUpdate(session._id, {
+    status: "CLOSED",
+    closedAt: new Date(),
+    customerName: customerName,
+    customerPhone: customerPhone
   });
-}
 
-  session.status = "CLOSED";
-  session.closedAt = new Date();
-  session.customerName = customerName;
-  session.customerPhone = customerPhone;
-  await session.save();
-
-  table.status = "AVAILABLE";
-  table.activeSession = null;
-  table.sessionToken = null;
-  table.sessionExpiresAt = null;
-  await table.save();
+  // ✅ FIX: Clear table state atomically
+  await Table.findByIdAndUpdate(table._id, {
+    status: "AVAILABLE",
+    activeSession: null,
+    sessionToken: null,
+    sessionExpiresAt: null
+  });
 
   const hotel = await Hotel.findById(hotel_id).select(
     "name address phone gstNumber"

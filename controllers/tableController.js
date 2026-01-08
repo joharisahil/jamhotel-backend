@@ -75,17 +75,34 @@ export const tableOverview = async (req, res) => {
     let total = 0;
     let sources = new Set();
 
-      if (table.activeSession?.sessionId) {
-      orders = await Order.find({
-        hotel_id,
-        tableSession_id: table.activeSession.sessionId,
-        paymentStatus: "PENDING"
+    // ✅ FIX: Only count orders from ACTIVE sessions
+    if (table.activeSession?.sessionId) {
+      // Verify the session is actually ACTIVE
+      const activeSession = await TableSession.findOne({
+        _id: table.activeSession.sessionId,
+        status: "ACTIVE"
       });
 
-      orders.forEach((o) => {
-        total += o.total;
-        sources.add(o.source);
-      });
+      if (activeSession) {
+        orders = await Order.find({
+          hotel_id,
+          tableSession_id: activeSession._id,
+          paymentStatus: "PENDING"
+        });
+
+        orders.forEach((o) => {
+          total += o.total;
+          sources.add(o.source);
+        });
+      } else {
+        // ✅ FIX: Clean up stale activeSession reference
+        await Table.findByIdAndUpdate(table._id, {
+          status: "AVAILABLE",
+          activeSession: null
+        });
+        table.status = "AVAILABLE";
+        table.activeSession = null;
+      }
     }
 
     result.push({
