@@ -126,5 +126,7 @@ const roomInvoiceSchema = new mongoose.Schema({
 roomInvoiceSchema.index({ hotel_id: 1, createdAt: -1 });
 roomInvoiceSchema.index({ invoiceNumber: 1 });
 roomInvoiceSchema.index({ bookingId: 1 });
+roomInvoiceSchema.index({ hotel_id: 1, guestName: 1 });
+roomInvoiceSchema.index({ hotel_id: 1, guestPhone: 1 });
 
 export default mongoose.model("RoomInvoice", roomInvoiceSchema);

@@ -18,7 +18,7 @@ import transactionRoutes from "./transactionRoutes.js";
 import banquetBookingRoutes from "./banquetBookingRoutes.js";
 import billingRoutes from "./billingRoutes.js";
 import billRoutes from "./billRoutes.js";
-
+import guestRoutes from "./guestRoutes.js";
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -40,5 +40,6 @@ router.use("/maintenance", maintenanceRoutes);
 router.use("/laundry", laundryRoutes);
 router.use("/security", securityRoutes);
 router.use("/transactions", transactionRoutes);
+router.use("/guests",guestRoutes);
 
 export default router;
