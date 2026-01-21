@@ -571,6 +571,7 @@ const foodTotal = +(foodSubtotalAfterDiscount + foodGST).toFixed(2);
       guestAddress: booking.guestAddress,
       adults: booking.adults,
       children: booking.children,
+      guestIds: booking.guestIds || [],
 
       // Company info
       companyName: booking.companyName,
