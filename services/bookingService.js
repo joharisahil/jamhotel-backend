@@ -768,6 +768,7 @@ export const checkoutBooking = async (
       guestAddress: booking.guestAddress,
       adults: booking.adults,
       children: booking.children,
+      guestIds: booking.guestIds || [],
 
       // Company info
       companyName: booking.companyName,
@@ -830,6 +831,7 @@ export const checkoutBooking = async (
 
       actualCheckoutTime,
     };
+   // console.log("CHECKOUT guestIds:", booking.guestIds);
 
     const invoice = await RoomInvoice.create([invoicePayload], { session });
 
@@ -873,7 +875,7 @@ export const checkoutBooking = async (
     await session.commitTransaction();
     session.endSession();
 
-    return invoice[0];
+    return invoice[0].toObject();
   } catch (e) {
     await session.abortTransaction();
     session.endSession();
