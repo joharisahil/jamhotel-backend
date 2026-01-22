@@ -3,6 +3,7 @@ import * as orderService from "../services/orderService.js";
 import { createOrderSchema } from "../validators/orderValidator.js";
 import TableSession from "../models/TableSession.js";
 import Order from "../models/Order.js"
+import Table from "../models/Table.js";
 
 export const createOrder = asyncHandler(async (req,res) => {
   const payload = createOrderSchema.parse(req.body);
