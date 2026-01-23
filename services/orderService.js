@@ -97,26 +97,19 @@ export const createOrder = async (payload) => {
   const total = subtotal + gst;
 
 if (payload.table_id) {
-  tableSession = await TableSession.findOne({
-    hotel_id: payload.hotel_id,
-    table_id: payload.table_id,
-    status: "ACTIVE",
-  });
+const table = await Table.findById(payload.table_id);
 
-  if (!tableSession) {
-    tableSession = await TableSession.create({
-      hotel_id: payload.hotel_id,
-      table_id: payload.table_id,
-    });
+if (!table?.activeSession?.sessionId) {
+  throw new Error("No active table session");
+}
 
-    await Table.findByIdAndUpdate(payload.table_id, {
-      status: "OCCUPIED",
-      activeSession: {
-        sessionId: tableSession._id,
-        startedAt: tableSession.startedAt,
-      },
-    });
-  }
+tableSession = await TableSession.findById(table.activeSession.sessionId);
+
+if (!tableSession || tableSession.status !== "ACTIVE") {
+  throw new Error("Invalid table session");
+}
+
+
 }
 
   /* --------------------------------

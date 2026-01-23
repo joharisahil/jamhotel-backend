@@ -3,6 +3,7 @@ import * as orderService from "../services/orderService.js";
 import { createOrderSchema } from "../validators/orderValidator.js";
 import TableSession from "../models/TableSession.js";
 import Order from "../models/Order.js"
+import Table from "../models/Table.js";
 
 export const createOrder = asyncHandler(async (req,res) => {
   const payload = createOrderSchema.parse(req.body);
@@ -49,10 +50,14 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;
 
-  // ✅ FIX: Only find ACTIVE sessions
+  const table = await Table.findOne({ _id: tableId, hotel_id });
+
+  if (!table?.activeSession?.sessionId) {
+    return res.json({ success: true, orders: [], sessionId: null });
+  }
+
   const session = await TableSession.findOne({
-    hotel_id,
-    table_id: tableId,
+    _id: table.activeSession.sessionId,
     status: "ACTIVE",
   });
 
@@ -60,9 +65,7 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
     return res.json({ success: true, orders: [], sessionId: null });
   }
 
-  // ✅ FIX: Only get pending orders from this ACTIVE session
   const orders = await Order.find({
-    hotel_id,
     tableSession_id: session._id,
     paymentStatus: "PENDING",
   })
@@ -75,4 +78,5 @@ export const getOrdersByTable = asyncHandler(async (req, res) => {
     orders,
   });
 });
+
 
