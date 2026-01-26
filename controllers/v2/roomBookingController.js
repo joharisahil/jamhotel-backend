@@ -4,129 +4,150 @@ import Room from "../../models/Room.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { recalculateRoomBilling } from "../../services/bookingService.js";
 import Order from "../../models/Order.js";
-/* =====================================================
-   🔁 FULL & SINGLE SOURCE OF TRUTH
-   ===================================================== */
-export const recalculatePayments = (booking) => {
+import { calculateFoodBillingForBooking } from "../../services/foodBilling.service.js";
+
+
+const splitGST = (finalAmount, gstRate = 5) => {
+  const base = +(finalAmount / (1 + gstRate / 100)).toFixed(2);
+  const gst = +(finalAmount - base).toFixed(2);
+  return { base, gst };
+};
+
+export const recalculatePayments = async (booking) => {
   if (!booking || !booking.room_id) return booking;
 
-  /* ===================== NIGHTS ===================== */
-  const checkIn = new Date(booking.checkIn);
-  const checkOut = new Date(booking.checkOut);
+  /* ===================== RESET DERIVED FIELDS ===================== */
+  booking.discountAmount = 0;
+  booking.taxable = 0;
+  booking.cgst = 0;
+  booking.sgst = 0;
+  booking.grandTotal = 0;
+  booking.advancePaid = 0;
+  booking.balanceDue = 0;
+  booking.roundOffAmount = 0;
 
+  /* ===================== NIGHTS ===================== */
   const nights = Math.max(
     1,
-    Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
+    Math.ceil(
+      (new Date(booking.checkOut) - new Date(booking.checkIn)) /
+        (1000 * 60 * 60 * 24),
+    ),
   );
-
   booking.nights = nights;
 
-  /* ===================== ROOM PRICE ===================== */
-  let roomPrice = 0;
+  const isFinalInclusive =
+    booking.pricingType === "FINAL_INCLUSIVE" &&
+    Number(booking.finalRoomPrice) > 0;
 
-  if (booking.room_id?.plans?.length && booking.planCode) {
-    const [planCode, occupancy] = booking.planCode.split("_");
-    const plan = booking.room_id.plans.find((p) => p.code === planCode);
+  /* ===================== ROOM BASE ===================== */
+  let roomBase = 0;
 
-    if (plan) {
-      roomPrice = occupancy === "SINGLE" ? plan.singlePrice : plan.doublePrice;
+  if (isFinalInclusive) {
+    const { base } = splitGST(Number(booking.finalRoomPrice));
+    roomBase = +(base * nights).toFixed(2);
+  } else {
+    let roomRate = 0;
+
+    if (booking.room_id?.plans?.length && booking.planCode) {
+      const [planCode, occupancy] = booking.planCode.split("_");
+      const plan = booking.room_id.plans.find((p) => p.code === planCode);
+      if (plan) {
+        roomRate =
+          occupancy === "SINGLE" ? plan.singlePrice : plan.doublePrice;
+      }
     }
+
+    if (!roomRate) roomRate = booking.room_id?.baseRate || 0;
+    roomBase = +(roomRate * nights).toFixed(2);
   }
 
-  if (!roomPrice) {
-    roomPrice = booking.room_id?.baseRate || 0;
-  }
+  booking.roomBase = roomBase;
 
-  booking.roomPrice = roomPrice;
-  booking.roomStayTotal = +(roomPrice * nights).toFixed(2);
-
-  /* ===================== EXTRAS ===================== */
+  /* ===================== EXTRAS BASE ===================== */
   let extrasBase = 0;
 
-  (booking.addedServices || []).forEach((service) => {
+  (booking.addedServices || []).forEach((s) => {
     const days =
-      Array.isArray(service.days) && service.days.length > 0
-        ? service.days.length
-        : nights;
-
-    extrasBase += (service.price || 0) * days;
+      Array.isArray(s.days) && s.days.length > 0 ? s.days.length : nights;
+    extrasBase += (s.price || 0) * days;
   });
 
-  booking.extrasBase = +extrasBase.toFixed(2);
-
-  const extrasGST = booking.gstEnabled ? +(extrasBase * 0.05).toFixed(2) : 0;
-
-  booking.extrasGST = extrasGST;
-  booking.extrasTotal = +(extrasBase + extrasGST).toFixed(2);
+  extrasBase = +extrasBase.toFixed(2);
+  booking.extrasBase = extrasBase;
 
   /* ===================== DISCOUNT ===================== */
-  const discountPercent = Number(booking.discount || 0);
-  booking.discountAmount = +(
-    ((booking.roomStayTotal + extrasBase) * discountPercent) /
-    100
-  ).toFixed(2);
+  const discountPercent = Math.min(Number(booking.discount || 0), 100);
 
-  /* ===================== TAX ===================== */
-  const taxableAmount = booking.gstEnabled
-    ? booking.roomStayTotal + extrasBase - booking.discountAmount
-    : 0;
+  let discountOnRoom = 0;
+  let discountOnExtras = 0;
 
-  const gstTotal = booking.gstEnabled ? +(taxableAmount * 0.05).toFixed(2) : 0;
+  if (booking.discountScope === "ROOM") {
+    discountOnRoom = +(roomBase * discountPercent / 100).toFixed(2);
+  } else if (booking.discountScope === "EXTRAS") {
+    discountOnExtras = +(extrasBase * discountPercent / 100).toFixed(2);
+  } else {
+    // TOTAL
+    discountOnRoom = +(roomBase * discountPercent / 100).toFixed(2);
+    discountOnExtras = +(extrasBase * discountPercent / 100).toFixed(2);
+  }
 
-  booking.taxable = +taxableAmount.toFixed(2);
-  booking.cgst = +(gstTotal / 2).toFixed(2);
-  booking.sgst = +(gstTotal / 2).toFixed(2);
+  discountOnRoom = Math.min(discountOnRoom, roomBase);
+  discountOnExtras = Math.min(discountOnExtras, extrasBase);
+
+  booking.discountAmount = +(discountOnRoom + discountOnExtras).toFixed(2);
+
+  /* ===================== TAXABLE ===================== */
+  const taxableRoom = Math.max(roomBase - discountOnRoom, 0);
+  const taxableExtras = Math.max(extrasBase - discountOnExtras, 0);
+
+  booking.taxable = +(taxableRoom + taxableExtras).toFixed(2);
+
+  /* ===================== GST (✔ FIXED) ===================== */
+  let totalGST = 0;
+
+  if (booking.gstEnabled) {
+    totalGST += +(taxableRoom * 0.05).toFixed(2);
+    totalGST += +(taxableExtras * 0.05).toFixed(2);
+  }
+
+  booking.cgst = +(totalGST / 2).toFixed(2);
+  booking.sgst = +(totalGST / 2).toFixed(2);
 
   /* ===================== FOOD ===================== */
-  const foodSubtotal = booking.foodTotals?.subtotal || 0;
-  const foodDiscountPercent = Number(booking.foodDiscount || 0);
-
-  booking.foodDiscountAmount = +(
-    (foodSubtotal * foodDiscountPercent) /
-    100
-  ).toFixed(2);
-
-  const foodAfterDiscount = foodSubtotal - booking.foodDiscountAmount;
-
-  const foodGST = booking.foodGSTEnabled
-    ? +(foodAfterDiscount * 0.05).toFixed(2)
-    : 0;
+  const foodBill = await calculateFoodBillingForBooking(booking);
 
   booking.foodTotals = {
-    subtotal: +foodSubtotal.toFixed(2),
-    gst: foodGST,
-    total: +(foodAfterDiscount + foodGST).toFixed(2),
+    subtotal: foodBill.summary.subtotal,
+    gst: foodBill.summary.gst,
+    total: foodBill.summary.total,
   };
+
+  booking.foodDiscountAmount = foodBill.summary.discountAmount;
 
   /* ===================== GRAND TOTAL ===================== */
   let grandTotal =
-    booking.taxable + booking.cgst + booking.sgst + booking.foodTotals.total;
-
-  /* ===================== ROUND OFF ===================== */
-  let roundOffAmount = 0;
+    booking.taxable + totalGST + booking.foodTotals.total;
 
   if (booking.roundOffEnabled) {
     const rounded = Math.round(grandTotal);
-    roundOffAmount = +(rounded - grandTotal).toFixed(2);
+    booking.roundOffAmount = +(rounded - grandTotal).toFixed(2);
     grandTotal = rounded;
   }
 
-  booking.roundOffAmount = roundOffAmount;
   booking.grandTotal = +grandTotal.toFixed(2);
 
   /* ===================== ADVANCES ===================== */
   booking.advancePaid = (booking.advances || []).reduce(
     (sum, a) => sum + (a.amount || 0),
-    0
+    0,
   );
 
-  /* ===================== BALANCE (NEVER NEGATIVE) ===================== */
   booking.balanceDue = Math.max(
     +(booking.grandTotal - booking.advancePaid).toFixed(2),
-    0
+    0,
   );
 
-  /* ===================== FINAL PAYMENT ===================== */
   booking.finalPaymentReceived = booking.balanceDue === 0;
   booking.finalPaymentAmount = booking.finalPaymentReceived
     ? booking.grandTotal
@@ -134,6 +155,7 @@ export const recalculatePayments = (booking) => {
 
   return booking;
 };
+
 
 /* POST /api/bookings/:id/advance */
 export const addAdvancePayment = asyncHandler(async (req, res) => {
@@ -158,10 +180,10 @@ export const addAdvancePayment = asyncHandler(async (req, res) => {
   }
 
   // ✅ ALWAYS calculate latest bill first
-  recalculatePayments(booking);
+  await recalculatePayments(booking);
 
   const remainingPayable = Number(
-    (booking.grandTotal - booking.advancePaid).toFixed(0)
+    (booking.grandTotal - booking.advancePaid).toFixed(0),
   );
 
   const EPSILON = 2;
@@ -182,7 +204,7 @@ export const addAdvancePayment = asyncHandler(async (req, res) => {
   booking.advances.push(newAdvance);
 
   // 🔁 Recalculate again after adding advance
-  recalculatePayments(booking);
+  await recalculatePayments(booking);
   await booking.save();
 
   res.status(200).json({
@@ -227,7 +249,7 @@ export const updateAdvancePayment = async (req, res) => {
     if (mode) booking.advances[advanceId].mode = mode;
     if (note !== undefined) booking.advances[advanceId].note = note;
 
-    recalculatePayments(booking);
+    await recalculatePayments(booking);
     await booking.save();
 
     res.json({
@@ -267,7 +289,7 @@ export const removeAdvancePayment = asyncHandler(async (req, res) => {
     }
 
     const index = booking.advances.findIndex(
-      (a) => a._id?.toString() === advanceId
+      (a) => a._id?.toString() === advanceId,
     );
 
     if (index === -1) {
@@ -281,7 +303,7 @@ export const removeAdvancePayment = asyncHandler(async (req, res) => {
     booking.advances.splice(index, 1);
 
     // 🔁 Recalculate full bill
-    recalculatePayments(booking);
+   await recalculatePayments(booking);
     await booking.save();
 
     res.json({
@@ -319,7 +341,7 @@ export const finalCheckout = async (req, res) => {
       });
     }
 
-    recalculatePayments(booking);
+    await recalculatePayments(booking);
 
     // Add remaining balance as final payment if needed
     if (booking.balanceDue > 0) {
@@ -330,7 +352,7 @@ export const finalCheckout = async (req, res) => {
       });
     }
 
-    recalculatePayments(booking);
+    await recalculatePayments(booking);
 
     booking.finalPaymentReceived = true;
     booking.finalPaymentMode = mode || "CASH";
@@ -354,7 +376,8 @@ export const finalCheckout = async (req, res) => {
   }
 };
 
-export const updateRoomBilling = async (req, res) => {
+
+export const updateRoomBilling = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { discount = 0, gstEnabled } = req.body;
 
@@ -366,110 +389,32 @@ export const updateRoomBilling = async (req, res) => {
     });
   }
 
-  if (booking.status === "CHECKEDOUT") {
+  if (booking.status === "CHECKED_OUT") {
     return res.status(400).json({
       success: false,
       message: "Checked-out bookings cannot be modified",
     });
   }
 
-  /* ===================== 1️⃣ NIGHTS ===================== */
-  const MS_PER_DAY = 1000 * 60 * 60 * 24;
-  const nights = Math.max(
-    1,
-    Math.ceil(
-      (new Date(booking.checkOut) - new Date(booking.checkIn)) / MS_PER_DAY
-    )
-  );
+  booking.discount = Math.min(Math.max(Number(discount), 0), 100);
+  booking.gstEnabled = Boolean(gstEnabled);
 
-  /* ===================== 2️⃣ ROOM RATE ===================== */
-  const [planCode, occupancy] = String(booking.planCode).split("_");
-  const plan = booking.room_id?.plans?.find((p) => p.code === planCode);
-
-  if (!plan) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid room plan",
-    });
-  }
-
-  const roomRate = occupancy === "SINGLE" ? plan.singlePrice : plan.doublePrice;
-
-  const roomBase = +(roomRate * nights).toFixed(2);
-
-  /* ===================== 3️⃣ EXTRA SERVICES ===================== */
-  const extrasBase = (booking.addedServices || []).reduce((sum, s) => {
-    const days = Array.isArray(s.days) ? s.days.length : 0;
-    return sum + Number(s.price || 0) * days;
-  }, 0);
-
-  const base = +(roomBase + extrasBase).toFixed(2);
-
-  /* ===================== 4️⃣ DISCOUNT (ON TOTAL) ===================== */
-  const discountPercent = Math.min(Math.max(Number(discount), 0), 100);
-  const discountAmount = +((base * discountPercent) / 100).toFixed(2);
-
-  const taxable = Math.max(base - discountAmount, 0);
-
-  /* ===================== 5️⃣ GST (AFTER DISCOUNT) ===================== */
-  const cgst = gstEnabled && taxable > 0 ? +(taxable * 0.025).toFixed(2) : 0;
-
-  const sgst = gstEnabled && taxable > 0 ? +(taxable * 0.025).toFixed(2) : 0;
-
-  const roomTotal = +(taxable + cgst + sgst).toFixed(2);
-
-  /* ===================== 6️⃣ ADVANCES ===================== */
-  const advancePaid = Array.isArray(booking.advances)
-    ? booking.advances.reduce((sum, a) => sum + Number(a.amount || 0), 0)
-    : Number(booking.advancePaid || 0);
-
-  /* ===================== 7️⃣ FINAL TOTALS ===================== */
-  const foodTotal = booking.foodTotals?.total || 0;
-
-  const grandTotal = +(roomTotal + foodTotal).toFixed(2);
-  const balanceDue = +(grandTotal - advancePaid).toFixed(2);
-  const finalPaymentReceived = balanceDue <= 0;
-
-  /* ===================== 8️⃣ SAVE ===================== */
-  booking.nights = nights;
-
-  booking.roomBase = roomBase;
-  booking.extrasBase = extrasBase;
-
-  booking.discount = discountPercent;
-  booking.discountAmount = discountAmount;
-
-  booking.taxable = taxable;
-  booking.cgst = cgst;
-  booking.sgst = sgst;
-
-  booking.gstEnabled = gstEnabled;
-  booking.grandTotal = grandTotal;
-
-  booking.advancePaid = advancePaid;
-  booking.balanceDue = balanceDue;
-  booking.finalPaymentReceived = finalPaymentReceived;
-
+  await recalculatePayments(booking);
   await booking.save();
 
-  /* ===================== RESPONSE ===================== */
   res.json({
     success: true,
     booking,
-    summary: {
-      roomTotal,
-      foodTotal,
-      totalAdvance: advancePaid,
-      balanceDue,
-    },
   });
-};
+});
 
 export const updateBookingServices = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { addedServices } = req.body;
 
-  const booking = await RoomBooking.findById(id);
+  // ✅ MUST populate room_id
+  const booking = await RoomBooking.findById(id).populate("room_id");
+
   if (!booking) {
     return res.status(404).json({
       success: false,
@@ -504,12 +449,11 @@ export const updateBookingServices = asyncHandler(async (req, res) => {
       ? s.days.map(Number).filter((d) => d > 0)
       : [];
 
-    // 🔴 HARD VALIDATION
     if (days.length === 0) {
       throw new Error(
         `Please select at least one day for service "${
           s.name || `#${idx + 1}`
-        }"`
+        }"`,
       );
     }
 
@@ -521,17 +465,8 @@ export const updateBookingServices = asyncHandler(async (req, res) => {
     };
   });
 
-  /* ================= LOAD ROOM ================= */
-  const room = await Room.findById(booking.room_id);
-  if (!room) {
-    return res.status(400).json({
-      success: false,
-      message: "Room not found for recalculation",
-    });
-  }
-
-  /* ================= RECALCULATE BILLING ================= */
-  await recalculateRoomBilling(booking, room);
+  /* ================= RECALCULATE (SINGLE SOURCE OF TRUTH) ================= */
+  await recalculatePayments(booking);
 
   /* ================= SAVE ================= */
   await booking.save();
@@ -543,15 +478,17 @@ export const updateBookingServices = asyncHandler(async (req, res) => {
   });
 });
 
+
 export const updateFoodBilling = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { foodDiscount = 0, foodGSTEnabled = true } = req.body;
 
-  const booking = await RoomBooking.findById(id);
+  const booking = await RoomBooking.findById(id).populate("room_id");
   if (!booking) {
-    return res
-      .status(404)
-      .json({ success: false, message: "Booking not found" });
+    return res.status(404).json({
+      success: false,
+      message: "Booking not found",
+    });
   }
 
   if (booking.status === "CHECKEDOUT") {
@@ -561,36 +498,12 @@ export const updateFoodBilling = asyncHandler(async (req, res) => {
     });
   }
 
-  /* ===================== ORDERS ===================== */
-  const orders = await Order.find({
-    booking_id: booking._id,
-    status: "DELIVERED",
-  });
+  // ✅ ONLY update inputs (NO CALCULATION HERE)
+  booking.foodDiscount = Math.min(Math.max(Number(foodDiscount), 0), 100);
+  booking.foodGSTEnabled = Boolean(foodGSTEnabled);
 
-  const subtotal = orders.reduce((sum, o) => sum + Number(o.subtotal || 0), 0);
-
-  /* ===================== DISCOUNT ===================== */
-  const discountPercent = Number(foodDiscount || 0);
-  const discountAmount = +((subtotal * discountPercent) / 100).toFixed(2);
-
-  const discountedSubtotal = +(subtotal - discountAmount).toFixed(2);
-
-  /* ===================== GST ===================== */
-  const gst = foodGSTEnabled ? +(discountedSubtotal * 0.05).toFixed(2) : 0;
-
-  const total = +(discountedSubtotal + gst).toFixed(2);
-
-  /* ===================== SAVE ===================== */
-  booking.foodDiscount = discountPercent;
-  booking.foodDiscountAmount = discountAmount;
-  booking.foodGSTEnabled = foodGSTEnabled;
-
-  booking.foodTotals = {
-    subtotal: discountedSubtotal,
-    gst,
-    total,
-  };
-
+  // ✅ SINGLE SOURCE OF TRUTH
+  await recalculatePayments(booking);
   await booking.save();
 
   res.json({
@@ -642,6 +555,7 @@ export const getFoodBillingSummaryForBooking = asyncHandler(
      * ----------------------------------------- */
     const discountPercent = booking.foodDiscount || 0;
     const discountAmount = +((subtotal * discountPercent) / 100).toFixed(2);
+    
     const discountedSubtotal = +(subtotal - discountAmount).toFixed(2);
 
     /* -----------------------------------------
@@ -669,5 +583,5 @@ export const getFoodBillingSummaryForBooking = asyncHandler(
         gstEnabled: booking.foodGSTEnabled,
       },
     });
-  }
+  },
 );

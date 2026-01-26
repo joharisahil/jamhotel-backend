@@ -162,8 +162,8 @@ export const recalculateRoomBilling = async (booking, room) => {
   const nights = Math.max(
     1,
     Math.ceil(
-      (new Date(booking.checkOut) - new Date(booking.checkIn)) / MS_PER_DAY
-    )
+      (new Date(booking.checkOut) - new Date(booking.checkIn)) / MS_PER_DAY,
+    ),
   );
   booking.nights = nights;
 
@@ -182,7 +182,7 @@ export const recalculateRoomBilling = async (booking, room) => {
   booking.addedServices.forEach((s) => {
     if (!Array.isArray(s.days) || s.days.length === 0) {
       throw new Error(
-        `Service "${s.name}" must have at least one day selected`
+        `Service "${s.name}" must have at least one day selected`,
       );
     }
 
@@ -312,6 +312,10 @@ export const createBooking = async ({
   roundOffAmount = 0,
 
   planCode,
+  pricingMode,
+  pricingType,
+  finalRoomPrice,
+
   adults = 1,
   children = 0,
   // ✅ NEW
@@ -365,7 +369,7 @@ export const createBooking = async ({
     (p) =>
       p.code === planCode ||
       `${p.code}_SINGLE` === planCode ||
-      `${p.code}_DOUBLE` === planCode
+      `${p.code}_DOUBLE` === planCode,
   );
 
   if (!plan) throw new Error("Invalid plan selected");
@@ -380,8 +384,27 @@ export const createBooking = async ({
   const nights = Math.max(1, Math.ceil(rawDays));
 
   /* ---------------- ROOM TOTAL ---------------- */
+  /* ---------------- ROOM TOTAL ---------------- */
 
-  const roomBase = +(rate * nights).toFixed(2);
+  let roomBase = 0;
+  let roomGSTFromRoom = 0;
+
+  const isSpecialPricing =
+    typeof rest.finalRoomPrice === "number" && rest.finalRoomPrice > 0;
+
+  if (isSpecialPricing) {
+    // finalRoomPrice = FINAL PRICE PER NIGHT (GST INCLUSIVE)
+    const finalPerNight = Number(rest.finalRoomPrice);
+
+    const basePerNight = +(finalPerNight / 1.05).toFixed(2);
+    const gstPerNight = +(finalPerNight - basePerNight).toFixed(2);
+
+    roomBase = +(basePerNight * nights).toFixed(2);
+    roomGSTFromRoom = +(gstPerNight * nights).toFixed(2);
+  } else {
+    // OLD BEHAVIOUR (UNCHANGED)
+    roomBase = +(rate * nights).toFixed(2);
+  }
 
   /* ---------------- EXTRA SERVICES ---------------- */
   // BACKWARD COMPATIBLE:
@@ -398,7 +421,7 @@ export const createBooking = async ({
         : Array.from({ length: nights }, (_, i) => i + 1);
 
     const uniqueDays = [...new Set(daysArray)].filter(
-      (d) => d >= 1 && d <= nights
+      (d) => d >= 1 && d <= nights,
     );
 
     const serviceAmount = price * uniqueDays.length;
@@ -428,7 +451,7 @@ export const createBooking = async ({
 
       discountedRoomBase -= +((discountAmount * roomBase) / gross).toFixed(2);
       discountedExtrasBase -= +((discountAmount * extrasBase) / gross).toFixed(
-        2
+        2,
       );
     }
 
@@ -448,8 +471,11 @@ export const createBooking = async ({
   let gstBase = 0;
 
   // 1️⃣ Room GST (after discount)
+  // Room GST
   if (gstEnabled) {
-    gstBase += discountedRoomBase;
+    if (!isSpecialPricing) {
+      gstBase += discountedRoomBase;
+    }
   }
 
   // 2️⃣ Extra services GST (only GST-enabled services, after discount)
@@ -476,7 +502,10 @@ export const createBooking = async ({
     });
   }
 
-  const totalGST = +(gstBase * 0.05).toFixed(2);
+  let totalGST = +(gstBase * 0.05).toFixed(2);
+  if (isSpecialPricing) {
+    totalGST += roomGSTFromRoom;
+  }
   const cgst = +(totalGST / 2).toFixed(2);
   const sgst = +(totalGST / 2).toFixed(2);
   /* ---------------- ADVANCES (NEW ARRAY WAY) ---------------- */
@@ -530,6 +559,10 @@ export const createBooking = async ({
     roundOffAmount,
 
     planCode,
+    
+  pricingMode: pricingMode || "PLAN",
+  pricingType: pricingType || "BASE_EXCLUSIVE",
+  finalRoomPrice: finalRoomPrice ?? null,
     adults,
     children,
 
@@ -585,7 +618,7 @@ export const createBooking = async ({
 export const checkoutBooking = async (
   bookingId,
   userId,
-  finalPaymentData = {}
+  finalPaymentData = {},
 ) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -621,7 +654,7 @@ export const checkoutBooking = async (
     const plan = room.plans.find(
       (p) =>
         `${p.code}_SINGLE` === booking.planCode ||
-        `${p.code}_DOUBLE` === booking.planCode
+        `${p.code}_DOUBLE` === booking.planCode,
     );
     if (!plan) throw new Error("Invalid plan");
 
@@ -645,7 +678,7 @@ export const checkoutBooking = async (
           : Array.from({ length: nights }, (_, i) => i + 1);
 
       const uniqueDays = [...new Set(daysArray)].filter(
-        (d) => d >= 1 && d <= nights
+        (d) => d >= 1 && d <= nights,
       );
 
       return {
@@ -707,7 +740,7 @@ export const checkoutBooking = async (
     // Base subtotal (no GST)
     const foodSubtotalRaw = foodOrders.reduce(
       (s, o) => s + Number(o.subtotal || 0),
-      0
+      0,
     );
 
     // Discount BEFORE GST
@@ -831,7 +864,7 @@ export const checkoutBooking = async (
 
       actualCheckoutTime,
     };
-   // console.log("CHECKOUT guestIds:", booking.guestIds);
+    // console.log("CHECKOUT guestIds:", booking.guestIds);
 
     const invoice = await RoomInvoice.create([invoicePayload], { session });
 
@@ -842,7 +875,7 @@ export const checkoutBooking = async (
       await Order.updateMany(
         { _id: { $in: foodOrders.map((o) => o._id) } },
         { paymentStatus: "PAID", paidAt: checkOutDT },
-        { session }
+        { session },
       );
     }
 

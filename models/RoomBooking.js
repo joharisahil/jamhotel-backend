@@ -12,7 +12,7 @@ const idProofSchema = new mongoose.Schema(
     idNumber: { type: String, required: true },
     nameOnId: { type: String, required: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const addedServiceSchema = new mongoose.Schema(
@@ -22,7 +22,7 @@ const addedServiceSchema = new mongoose.Schema(
     gstEnabled: { type: Boolean, default: true },
     days: [Number],
   },
-  { _id: false }
+  { _id: false },
 );
 
 const foodTotalsSchema = new mongoose.Schema(
@@ -31,7 +31,7 @@ const foodTotalsSchema = new mongoose.Schema(
     gst: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
   },
-  { _id: false }
+  { _id: false },
 );
 
 /* ===================== NEW ADVANCE SCHEMA ===================== */
@@ -53,8 +53,8 @@ const advanceSchema = new mongoose.Schema(
       default: Date.now,
     },
     note: String,
-  },{ _id: true,timestamps: true } 
-
+  },
+  { _id: true, timestamps: true },
 );
 
 /* ===================== MAIN SCHEMA ===================== */
@@ -99,6 +99,17 @@ const roomBookingSchema = new mongoose.Schema(
     gstEnabled: { type: Boolean, default: true },
 
     planCode: String,
+   pricingType: {
+  type: String,
+  enum: ["BASE_EXCLUSIVE", "FINAL_INCLUSIVE"],
+  default: "BASE_EXCLUSIVE",
+},
+
+    finalRoomPrice: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
     adults: Number,
     children: Number,
 
@@ -138,7 +149,7 @@ const roomBookingSchema = new mongoose.Schema(
     },
 
     /* -------- Derived (BACKEND ONLY) -------- */
-    grandTotal: { type: Number, default: 0 }, 
+    grandTotal: { type: Number, default: 0 },
     advancePaid: { type: Number, default: 0 },
     balanceDue: { type: Number, default: 0 },
 
@@ -151,7 +162,7 @@ const roomBookingSchema = new mongoose.Schema(
     },
     finalPaymentAmount: { type: Number, default: 0 },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 /* ===================== INDEXES ===================== */

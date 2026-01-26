@@ -1,8 +1,8 @@
 // services/roomService.js
 import Room from "../models/Room.js";
 import RoomBooking from "../models/RoomBooking.js";
-import { recalculatePayments } from "../utils/recalculatePayments.js";
-
+//import { recalculatePayments } from "../utils/recalculatePayments.js";
+import { recalculatePayments } from "../controllers/v2/roomBookingController.js";
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 /**
@@ -261,7 +261,7 @@ export const getActiveBookingForToday = async (roomId, hotelId) => {
   if (!booking) return null;
 
   // ✅ CRITICAL LINE
-  recalculatePayments(booking);
+  await recalculatePayments(booking);
 
   return booking;
 };

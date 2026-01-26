@@ -1,6 +1,7 @@
 import RoomInvoice from "../../models/RoomInvoice.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
 
-export const searchGuests = async (req, res) => {
+export const searchGuests = asyncHandler( async (req, res) => {
   try {
     console.log("🔥 searchGuests controller hit");
 
@@ -100,7 +101,7 @@ export const searchGuests = async (req, res) => {
       message: "Guest search failed",
     });
   }
-};
+});
 
 // export const searchGuests = async (req, res) => {
 //      console.log("🔥 searchGuests controller hit");
