@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { set } from "mongoose";
 
 /* ===================== SUB SCHEMAS ===================== */
 
@@ -6,14 +6,35 @@ const idProofSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["Aadhaar Card", "Driving License", "Passport", "Voter ID"],
+      enum: [
+        "AADHAAR CARD",
+        "DRIVING LICENSE",
+        "PASSPORT",
+        "VOTER ID",
+        "PAN CARD",
+      ],
       required: true,
+      uppercase: true,
+      trim: true,
     },
-    idNumber: { type: String, required: true },
-    nameOnId: { type: String, required: true },
+
+    idNumber: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+
+    nameOnId: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
   },
-  { _id: false },
+  { _id: false }
 );
+
 
 const addedServiceSchema = new mongoose.Schema(
   {

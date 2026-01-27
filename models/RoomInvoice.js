@@ -2,6 +2,40 @@
 
 import mongoose from "mongoose";
 
+const idProofSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: [
+        "AADHAAR CARD",
+        "DRIVING LICENSE",
+        "PASSPORT",
+        "VOTER ID",
+        "PAN CARD",
+      ],
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+
+    idNumber: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+
+    nameOnId: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
+
 const roomInvoiceSchema = new mongoose.Schema({
   hotel_id: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -39,6 +73,9 @@ const roomInvoiceSchema = new mongoose.Schema({
   guestAddress: String,
   adults: Number,
   children: Number,
+
+  //ids
+  guestIds: [idProofSchema],
 
   // Company Details
   companyName: String,

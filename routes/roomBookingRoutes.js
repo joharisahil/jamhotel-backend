@@ -27,6 +27,7 @@ import {
   addAdvancePayment,
   updateAdvancePayment,
   removeAdvancePayment,
+   //updateGuestInfo,
   updateRoomBilling,
   updateBookingServices,
   updateFoodBilling,

@@ -324,7 +324,7 @@ export const createBooking = async ({
   advanceNote = "",
   // advancePaid = 0,
   // advancePaymentMode = "CASH",
-
+  
   discount = 0,
   guestIds = [],
   addedServices = [], // now supports gstEnabled per service
@@ -584,7 +584,7 @@ export const createBooking = async ({
     addedServices,
     guestIds,
 
-    balanceDue,
+   grandTotal,
     notes: rest.notes,
   };
 
