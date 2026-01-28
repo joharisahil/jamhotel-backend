@@ -813,6 +813,13 @@ export const checkoutBooking = async (
       checkOut: booking.checkOut,
       stayNights: nights,
       planCode: booking.planCode,
+      pricingType: booking.pricingType,
+finalRoomPrice: booking.finalRoomPrice,
+
+// 🔒 TAX SNAPSHOT (BACKEND TRUTH)
+taxable: booking.taxable,
+cgst: booking.cgst,
+sgst: booking.sgst,
 
       // Room charges
       roomRate,
