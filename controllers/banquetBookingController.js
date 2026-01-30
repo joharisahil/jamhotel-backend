@@ -18,11 +18,22 @@ export const listBanquetBookings = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
   const filters = {};
 
-  if (req.query.status) filters.status = req.query.status;
+  // Booking status filter
+  if (req.query.status) {
+    filters.bookingStatus = req.query.status;
+  }
 
+  // Hall filter
+  if (req.query.hallId) {
+    filters["hall._id"] = req.query.hallId;
+  }
+
+  // 📅 Month range filter (MANDATORY FOR CALENDAR)
   if (req.query.from && req.query.to) {
-    filters.dateFrom = { $gte: new Date(req.query.from) };
-    filters.dateTo = { $lte: new Date(req.query.to) };
+    filters.eventDate = {
+      $gte: new Date(req.query.from),
+      $lte: new Date(req.query.to),
+    };
   }
 
   const bookings = await banquetService.listBookings(hotel_id, filters);

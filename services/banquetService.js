@@ -2,6 +2,8 @@
 import BanquetHall from "../models/BanquetHall.js";
 import BanquetBooking from "../models/BanquetBooking.js";
 import Room from "../models/Room.js";
+import BanquetPlan from "../models/BanquetPlan.js";
+import { calculateTotals } from "../utils/banquetTotals.js";
 import mongoose from "mongoose";
 import { emitToHotel } from "../utils/socket.js";
 
@@ -46,16 +48,27 @@ export const deleteHall = async (hallId) => {
  * Check hall availability for given date range
  * returns true if available, false if any overlapping booking exists
  */
-export const isHallAvailable = async (hotel_id, hall_id, dateFrom, dateTo) => {
-  const overlapping = await BanquetBooking.findOne({
+export const isHallAvailable = async (
+  hotel_id,
+  hallId,
+  eventDate,
+  startTime,
+  endTime
+) => {
+  const conflict = await BanquetBooking.findOne({
     hotel_id,
-    hall_id,
-    status: { $nin: ["CANCELLED", "COMPLETED"] },
-    $or: [
-      { dateFrom: { $lte: new Date(dateTo) }, dateTo: { $gte: new Date(dateFrom) } }
-    ]
+    "hall._id": hallId,
+    eventDate: new Date(eventDate),
+    bookingStatus: { $ne: "CANCELLED" },
+    $expr: {
+      $and: [
+        { $lt: ["$startTime", endTime] },
+        { $gt: ["$endTime", startTime] },
+      ],
+    },
   });
-  return !Boolean(overlapping);
+
+  return !Boolean(conflict);
 };
 
 /**
@@ -67,52 +80,90 @@ export const isHallAvailable = async (hotel_id, hall_id, dateFrom, dateTo) => {
 export const createBooking = async (hotel_id, payload) => {
   const session = await mongoose.startSession();
   session.startTransaction();
+
   try {
-    // validate hall exists
-    const hall = await BanquetHall.findOne({ _id: payload.hall_id, hotel_id }).session(session);
-    if (!hall) throw new Error("Banquet hall not found");
-
-    // availability check
-    const available = await isHallAvailable(hotel_id, payload.hall_id, payload.dateFrom, payload.dateTo);
-    if (!available) throw new Error("Banquet hall is not available for selected dates");
-
-    // create booking
-    const booking = await BanquetBooking.create([{
+    /* ---------- HALL VALIDATION ---------- */
+    const hallDoc = await BanquetHall.findOne({
+      _id: payload.hallId,
       hotel_id,
-      ...payload,
-      status: "OCCUPIED"
-    }], { session });
+    }).session(session);
 
-    // reserve linked rooms if provided
-    if (payload.linkedRoomIds && payload.linkedRoomIds.length) {
-      const roomIds = payload.linkedRoomIds.map(id => mongoose.Types.ObjectId(id));
-      // check rooms availability
-      const conflicting = await Room.findOne({
-        _id: { $in: roomIds },
+    if (!hallDoc) throw new Error("Hall not found");
+
+    /* ---------- PLAN SNAPSHOT ---------- */
+    let planSnapshot = null;
+
+    if (payload.pricingMode === "PLAN") {
+      const plan = await BanquetPlan.findOne({
+        _id: payload.planId,
         hotel_id,
-        status: { $in: ["OCCUPIED", "CHECKEDIN"] }
+        isActive: true,
       }).session(session);
-      if (conflicting) throw new Error("One or more linked rooms are not available");
 
-      // mark rooms as BOOKED (simple reservation; you may want to create RoomBooking records separately)
-      await Room.updateMany(
-        { _id: { $in: roomIds }, hotel_id },
-        { $set: { status: "OCCUPIED" } },
-        { session }
-      );
+      if (!plan) throw new Error("Plan not found");
+
+      planSnapshot = {
+        _id: plan._id,
+        name: plan.name,
+        ratePerPerson: plan.ratePerPerson,
+        items: payload.planItems, // frontend-modified snapshot
+      };
     }
 
+    /* ---------- BUILD BOOKING ---------- */
+    const booking = new BanquetBooking({
+      hotel_id,
+
+      customerName: payload.customerName,
+      customerPhone: payload.customerPhone,
+      eventType: payload.eventType,
+      notes: payload.notes,
+
+      eventDate: payload.eventDate,
+      startTime: payload.startTime,
+      endTime: payload.endTime,
+
+      hall: {
+        _id: hallDoc._id,
+        name: hallDoc.name,
+        capacity: hallDoc.capacity,
+        baseCharge: hallDoc.pricePerDay,
+        isComplimentary: payload.isHallComplimentary || false,
+      },
+
+      guestsCount: payload.guestsCount,
+      linkedRoomIds: payload.linkedRoomIds || [],
+
+      pricingMode: payload.pricingMode,
+      plan: planSnapshot,
+      customFoodAmount: payload.customFoodAmount,
+
+      services: payload.services || [],
+      discount: payload.discount,
+      gstPercent: payload.gstPercent || 18,
+      payments: payload.payments || [],
+    });
+
+    /* ---------- TOTALS ---------- */
+    booking.totals = calculateTotals(booking);
+
+    /* ---------- STATUS ---------- */
+    booking.bookingStatus =
+      booking.totals.paidAmount === 0
+        ? "ENQUIRY"
+        : booking.totals.balanceAmount > 0
+        ? "TENTATIVE"
+        : "CONFIRMED";
+
+    await booking.save({ session });
     await session.commitTransaction();
-    session.endSession();
 
-    // emit event for real-time UIs
-    emitToHotel(hotel_id, "banquet:booking_created", booking[0]);
-
-    return booking[0];
+    return booking;
   } catch (err) {
     await session.abortTransaction();
-    session.endSession();
     throw err;
+  } finally {
+    session.endSession();
   }
 };
 
@@ -121,17 +172,17 @@ export const createBooking = async (hotel_id, payload) => {
  */
 export const listBookings = async (hotel_id, filters = {}, options = {}) => {
   const q = { hotel_id, ...filters };
-  const query = BanquetBooking.find(q).sort({ dateFrom: -1 });
+  const query = BanquetBooking.find(q).sort({ eventDate: -1 });
   if (options.limit) query.limit(options.limit);
   if (options.skip) query.skip(options.skip);
-  return query.populate("hall_id").exec();
+  return query.exec();
 };
 
 /**
  * Get single booking
  */
 export const getBooking = async (bookingId) => {
-  return BanquetBooking.findById(bookingId).populate("hall_id").exec();
+  return BanquetBooking.findById(bookingId).exec();
 };
 
 /**
@@ -144,22 +195,42 @@ export const updateBooking = async (bookingId, hotel_id, updates) => {
   if (String(booking.hotel_id) !== String(hotel_id)) throw new Error("Forbidden");
 
   // if hall or date range changed, check availability (exclude current booking)
-  if ((updates.hall_id && String(updates.hall_id) !== String(booking.hall_id)) ||
-      (updates.dateFrom && updates.dateFrom !== booking.dateFrom) ||
-      (updates.dateTo && updates.dateTo !== booking.dateTo)) {
-    const overlapping = await BanquetBooking.findOne({
-      hotel_id,
-      _id: { $ne: bookingId },
-      hall_id: updates.hall_id || booking.hall_id,
-      status: { $nin: ["CANCELLED", "COMPLETED"] },
-      $or: [
-        { dateFrom: { $lte: new Date(updates.dateTo || booking.dateTo) }, dateTo: { $gte: new Date(updates.dateFrom || booking.dateFrom) } }
-      ]
-    });
-    if (overlapping) throw new Error("Requested hall/date is not available");
+if (
+  updates.eventDate ||
+  updates.startTime ||
+  updates.endTime ||
+  updates.hall?._id
+) {
+  const overlapping = await BanquetBooking.findOne({
+    hotel_id,
+    _id: { $ne: bookingId },
+    "hall._id": updates.hall?._id || booking.hall._id,
+    eventDate: new Date(updates.eventDate || booking.eventDate),
+    bookingStatus: { $nin: ["CANCELLED", "COMPLETED"] },
+    $expr: {
+      $and: [
+        { $lt: ["$startTime", updates.endTime || booking.endTime] },
+        { $gt: ["$endTime", updates.startTime || booking.startTime] },
+      ],
+    },
+  });
+
+  if (overlapping) {
+    throw new Error("Requested hall/time slot is not available");
   }
+}
 
   Object.assign(booking, updates);
+  // 🔥 RE-CALCULATE TOTALS
+  booking.totals = calculateTotals(booking);
+
+  // 🔥 RE-CALCULATE STATUS
+  booking.bookingStatus =
+  booking.totals.paidAmount === 0
+    ? "ENQUIRY"
+    : booking.totals.balanceAmount > 0
+    ? "TENTATIVE"
+    : "CONFIRMED";
   await booking.save();
 
   emitToHotel(hotel_id, "banquet:booking_updated", booking);
@@ -178,13 +249,13 @@ export const cancelBooking = async (bookingId, hotel_id) => {
     if (!booking) throw new Error("Booking not found");
     if (String(booking.hotel_id) !== String(hotel_id)) throw new Error("Forbidden");
 
-    booking.status = "CANCELLED";
+    booking.bookingStatus = "CANCELLED";
     await booking.save({ session });
 
     if (booking.linkedRoomIds && booking.linkedRoomIds.length) {
       await Room.updateMany(
         { _id: { $in: booking.linkedRoomIds }, hotel_id },
-        { $set: { status: "AVAILABLE" } },
+        { $set: { bookingStatus: "AVAILABLE" } },
         { session }
       );
     }

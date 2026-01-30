@@ -18,6 +18,7 @@ import transactionRoutes from "./transactionRoutes.js";
 import banquetBookingRoutes from "./banquetBookingRoutes.js";
 import billingRoutes from "./billingRoutes.js";
 import billRoutes from "./billRoutes.js";
+import banquetPlanRoutes from "./banquetPlanRoutes.js";
 
 const router = express.Router();
 
@@ -29,6 +30,7 @@ router.use("/room-bookings", roomBookingRoutes);
 router.use("/banquet-bookings", banquetBookingRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/banquets", banquetRoutes);
+router.use("/banquet-plans", banquetPlanRoutes);
 router.use("/tables", tableRoutes);
 router.use("/menu", menuRoutes);
 router.use("/orders", orderRoutes);
