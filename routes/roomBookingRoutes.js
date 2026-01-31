@@ -2,7 +2,7 @@
 import express from "express";
 import {
   createBooking,
-  getBooking,
+  // getBooking,
   listBookings,
   getCurrentBookingForRoom,
   checkoutBooking,
@@ -29,6 +29,7 @@ import {
   removeAdvancePayment,
    //updateGuestInfo,
   updateRoomBilling,
+  getBooking,
   updateBookingServices,
   updateFoodBilling,
   getFoodBillingSummaryForBooking,
@@ -62,7 +63,7 @@ router.get(
 );
 
 // Dynamic routes LAST
-router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
+// router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
 
 router.post(
   "/:id/checkout",
@@ -150,6 +151,8 @@ router.get(
   authorize("FRONT_OFFICE", "GM", "MD"),
   getFoodBillingSummaryForBooking
 );
+
+router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
 
 router.patch(
   "/:id/services",

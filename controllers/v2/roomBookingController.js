@@ -17,14 +17,14 @@ export const recalculatePayments = async (booking) => {
   if (!booking || !booking.room_id) return booking;
 
   /* ===================== RESET DERIVED FIELDS ===================== */
-  booking.discountAmount = 0;
-  booking.taxable = 0;
-  booking.cgst = 0;
-  booking.sgst = 0;
-  booking.grandTotal = 0;
-  booking.advancePaid = 0;
-  booking.balanceDue = 0;
-  booking.roundOffAmount = 0;
+  // booking.discountAmount = 0;
+  // booking.taxable = 0;
+  // booking.cgst = 0;
+  // booking.sgst = 0;
+  // booking.grandTotal = 0;
+  // booking.advancePaid = 0;
+  // booking.balanceDue = 0;
+  // booking.roundOffAmount = 0;
 
   /* ===================== NIGHTS ===================== */
   const nights = Math.max(
@@ -588,3 +588,24 @@ export const getFoodBillingSummaryForBooking = asyncHandler(
 
 
 
+export const getBooking = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  let booking = await RoomBooking.findById(id).populate("room_id");
+  if (!booking) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Booking not found" });
+  }
+
+  if (String(booking.hotel_id) !== String(req.user.hotel_id)) {
+    return res
+      .status(403)
+      .json({ success: false, message: "Forbidden" });
+  }
+
+  // ✅ IMPORTANT FIX: always recalculate totals
+  booking = await recalculatePayments(booking);
+
+  res.json({ success: true, booking });
+});
