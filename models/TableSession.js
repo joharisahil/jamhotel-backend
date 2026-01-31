@@ -33,16 +33,6 @@ const tableSessionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/**
- * 🔥 ABSOLUTE GUARANTEE
- * Only ONE ACTIVE session per table per hotel
- */
-tableSessionSchema.index(
-  { hotel_id: 1, table_id: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { status: "ACTIVE" }
-  }
-);
+tableSessionSchema.index({ hotel_id: 1, table_id: 1, status: 1 });
 
 export default mongoose.model("TableSession", tableSessionSchema);
