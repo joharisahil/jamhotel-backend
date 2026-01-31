@@ -1,18 +1,41 @@
 // models/RoomInvoice.js - Complete schema with all fields
 
 import mongoose from "mongoose";
+
 const idProofSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["Aadhaar Card", "Driving License", "Passport", "Voter ID"],
+      enum: [
+        "AADHAAR CARD",
+        "DRIVING LICENSE",
+        "PASSPORT",
+        "VOTER ID",
+        "PAN CARD",
+      ],
       required: true,
+      uppercase: true,
+      trim: true,
     },
-    idNumber: { type: String, required: true },
-    nameOnId: { type: String, required: true },
+
+    idNumber: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+
+    nameOnId: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
   },
   { _id: false }
 );
+
+
 const roomInvoiceSchema = new mongoose.Schema({
   hotel_id: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -51,10 +74,9 @@ const roomInvoiceSchema = new mongoose.Schema({
   adults: Number,
   children: Number,
 
-
   //ids
   guestIds: [idProofSchema],
-  
+
   // Company Details
   companyName: String,
   companyGSTIN: String,
@@ -141,5 +163,7 @@ const roomInvoiceSchema = new mongoose.Schema({
 roomInvoiceSchema.index({ hotel_id: 1, createdAt: -1 });
 roomInvoiceSchema.index({ invoiceNumber: 1 });
 roomInvoiceSchema.index({ bookingId: 1 });
+roomInvoiceSchema.index({ hotel_id: 1, guestName: 1 });
+roomInvoiceSchema.index({ hotel_id: 1, guestPhone: 1 });
 
 export default mongoose.model("RoomInvoice", roomInvoiceSchema);

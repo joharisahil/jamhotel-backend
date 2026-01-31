@@ -15,6 +15,6 @@ router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getRoom);
 router.put("/:id", authorize("FRONT_OFFICE", "GM", "MD"), updateRoom);
 router.delete("/:id", authorize("FRONT_OFFICE", "GM", "MD"), deleteRoom);
 router.get("/date/all", authorize("FRONT_OFFICE", "GM", "MD"), getAllRoomsByDate);
-router.get("/current/today/:roomId", getBookingByRoomForToday);
-
+//main api for giving room details on manage room booking
+router.get("/current/today/:roomId", getBookingByRoomForToday); 
 export default router;

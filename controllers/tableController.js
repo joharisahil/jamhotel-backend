@@ -122,44 +122,54 @@ export const startTableSession = async (req, res) => {
   const { tableId } = req.params;
   const hotel_id = req.user.hotel_id;
 
+  // 1️⃣ Auto close empty session (only unpaid orders count)
   await autoCloseEmptySession(hotel_id, tableId);
 
   const table = await Table.findOne({ _id: tableId, hotel_id });
-  if (!table) {
-    return res.status(404).json({ success: false, message: "Table not found" });
-  }
 
-  // 🔥 ALWAYS TRUST table.activeSession
+  if (!table)
+    return res.status(404).json({ success: false, message: "Table not found" });
+
+  // 2️⃣ 🔥 HARD SAFETY CHECK (ZOMBIE SESSION KILL)
   if (table.activeSession?.sessionId) {
     const session = await TableSession.findById(table.activeSession.sessionId);
 
-    if (session && session.status === "ACTIVE") {
-      return res.json({ success: true, session, table });
+    // Session missing OR already closed
+    if (!session || session.status === "CLOSED") {
+      table.status = "AVAILABLE";
+      table.activeSession = null;
+      await table.save();
+    } else {
+      // 🔥 KEY FIX: check if unpaid orders still exist
+      const pendingOrders = await Order.countDocuments({
+        tableSession_id: session._id,
+        paymentStatus: "PENDING",
+      });
+
+      // No pending orders → zombie session
+      if (pendingOrders === 0) {
+        await TableSession.findByIdAndUpdate(session._id, {
+          status: "CLOSED",
+          closedAt: new Date(),
+        });
+
+        table.status = "AVAILABLE";
+        table.activeSession = null;
+        await table.save();
+      }
     }
   }
 
-  // 🔥 CREATE NEW SESSION (SAFE DUE TO UNIQUE INDEX)
-  let session;
-try {
-  session = await TableSession.create({
-    hotel_id,
-    table_id: tableId,
-  });
-} catch (err) {
-  // 🔥 If duplicate ACTIVE session exists, reuse it
-  session = await TableSession.findOne({
-    hotel_id,
-    table_id: tableId,
-    status: "ACTIVE",
-  });
-}
+  // 3️⃣ If table is still busy, just open it (do NOT create new session)
+  if (table.status !== "AVAILABLE") {
+    return res.json({ success: true, table });
+  }
 
-if (!session) {
-  return res.status(500).json({
-    success: false,
-    message: "Failed to acquire table session"
+  // 4️⃣ Create fresh session
+  const session = await TableSession.create({
+    hotel_id,
+    table_id: tableId,
   });
-}
 
   table.status = "OCCUPIED";
   table.activeSession = {

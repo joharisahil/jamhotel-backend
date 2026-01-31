@@ -4,10 +4,11 @@ import {
   getTableBill,
   finalizeRestaurantBill,
   getPendingRooms,
-  getRoomBill,
+//  getRoomBill,
   finalizeRoomBill
 } from "../controllers/billingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
+import { getRoomBill } from "../controllers/v2/billingController.js";
 
 const router = express.Router();
 

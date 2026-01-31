@@ -1,7 +1,8 @@
 // services/roomService.js
 import Room from "../models/Room.js";
 import RoomBooking from "../models/RoomBooking.js";
-
+//import { recalculatePayments } from "../utils/recalculatePayments.js";
+import { recalculatePayments } from "../controllers/v2/roomBookingController.js";
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 /**
@@ -226,19 +227,41 @@ export const getAllRoomsWithBookingStatus = async (hotel_id, checkInDT, checkOut
   }));
 };
 
+// export const getActiveBookingForToday = async (roomId, hotelId) => {
+
+//   const now = new Date();
+
+//   return RoomBooking.findOne({
+//     hotel_id: hotelId,
+//     room_id: roomId,
+//     status: { $nin: ["CANCELLED", "CHECKED_OUT"] },
+
+//     // Guest should already have checked in
+//     checkIn: { $lte: now },
+
+//     // Guest should not have checked out yet
+//     checkOut: { $gt: now }
+//   }).populate("room_id");
+// };
+
+
+/*NEW*/
+
 export const getActiveBookingForToday = async (roomId, hotelId) => {
   const now = new Date();
 
-  return RoomBooking.findOne({
+  const booking = await RoomBooking.findOne({
     hotel_id: hotelId,
     room_id: roomId,
-    status: { $nin: ["CANCELLED", "CHECKED_OUT"] },
-
-    // Guest should already have checked in
+    status: { $nin: ["CANCELLED", "CHECKEDOUT"] }, // keep consistent
     checkIn: { $lte: now },
-
-    // Guest should not have checked out yet
-    checkOut: { $gt: now }
+    checkOut: { $gt: now },
   }).populate("room_id");
-};
 
+  if (!booking) return null;
+
+  // ✅ CRITICAL LINE
+  await recalculatePayments(booking);
+
+  return booking;
+};
