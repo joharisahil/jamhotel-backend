@@ -970,6 +970,30 @@ export const checkoutBooking = async (
       status: "DELIVERED",
     }).session(session);
 
+    const foodSubtotalRaw = foodOrders.reduce(
+  (sum, o) => sum + Number(o.subtotal || 0),
+  0
+);
+
+const foodDiscountPercent = Number(booking.foodDiscount || 0);
+const foodDiscountAmount = +(
+  (foodSubtotalRaw * foodDiscountPercent) / 100
+).toFixed(2);
+
+const foodSubtotalAfterDiscount = +(
+  foodSubtotalRaw - foodDiscountAmount
+).toFixed(2);
+
+let foodGST = 0;
+if (booking.foodGSTEnabled) {
+  foodGST = +(foodSubtotalAfterDiscount * 0.05).toFixed(2);
+}
+
+const foodCGST = +(foodGST / 2).toFixed(2);
+const foodSGST = +(foodGST / 2).toFixed(2);
+const foodTotal = +(foodSubtotalAfterDiscount + foodGST).toFixed(2);
+
+
     /* ===================== FINAL PAYMENT ===================== */
     if (finalPaymentData?.finalPaymentReceived) {
       booking.finalPaymentReceived = true;
@@ -1066,8 +1090,22 @@ export const checkoutBooking = async (
       roundOffAmount: booking.roundOffAmount,
 
       /* ---------- Food (OLD + NEW) ---------- */
-      foodTotals: booking.foodTotals,
-      foodDiscountAmount: booking.foodDiscountAmount,
+foodOrders: foodOrders.map((o) => ({
+        order_id: o._id,
+        items: o.items,
+        subtotal: o.subtotal,
+        gst: o.gst,
+        total: o.total,
+      })),
+
+      foodSubtotalRaw,
+      foodDiscountPercent,
+      foodDiscountAmount,
+      foodSubtotalAfterDiscount,
+      foodCGST,
+      foodSGST,
+      foodGST,
+      foodTotal,
       foodGSTEnabled: booking.foodGSTEnabled,
 
       /* ---------- Final ---------- */
