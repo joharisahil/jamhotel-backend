@@ -104,15 +104,32 @@ export const recalculatePayments = async (booking) => {
   booking.taxable = +(taxableRoom + taxableExtras).toFixed(2);
 
   /* ===================== GST (✔ FIXED) ===================== */
-  let totalGST = 0;
+let totalGST = 0;
 
-  if (booking.gstEnabled) {
-    totalGST += +(taxableRoom * 0.05).toFixed(2);
-    totalGST += +(taxableExtras * 0.05).toFixed(2);
-  }
+// Room GST
+if (booking.gstEnabled) {
+  totalGST += +(taxableRoom * 0.05).toFixed(2);
+}
 
-  booking.cgst = +(totalGST / 2).toFixed(2);
-  booking.sgst = +(totalGST / 2).toFixed(2);
+// Extras GST (respects gstEnabled per service)
+let extrasGST = 0;
+
+(booking.addedServices || []).forEach((s) => {
+  if (!s.gstEnabled) return;
+
+  const days =
+    Array.isArray(s.days) && s.days.length > 0 ? s.days.length : nights;
+
+  const base = (s.price || 0) * days;
+
+  extrasGST += +(base * 0.05).toFixed(2);
+});
+
+totalGST += extrasGST;
+
+booking.cgst = +(totalGST / 2).toFixed(2);
+booking.sgst = +(totalGST / 2).toFixed(2);
+
 
   /* ===================== FOOD ===================== */
   const foodBill = await calculateFoodBillingForBooking(booking);
