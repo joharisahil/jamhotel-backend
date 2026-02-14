@@ -27,12 +27,17 @@ import {
   addAdvancePayment,
   updateAdvancePayment,
   removeAdvancePayment,
-   //updateGuestInfo,
+  //updateGuestInfo,
+  resolveBooking,
   updateRoomBilling,
   getBooking,
   updateBookingServices,
   updateFoodBilling,
   getFoodBillingSummaryForBooking,
+  blockRoom,
+  blockSelectedRooms,
+  convertBlockToBooking,
+  unblockRoom
 } from "../controllers/v2/roomBookingController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 
@@ -52,14 +57,14 @@ router.get("/", authorize("FRONT_OFFICE", "GM", "MD"), listBookings);
 router.get(
   "/current/:roomId",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  getCurrentBookingForRoom
+  getCurrentBookingForRoom,
 );
 // router.get("/orders/booking/:bookingId", authorize("FRONT_OFFICE", "GM", "MD"), getRoomServiceBillForBooking);
 router.get("/by-date", authorize("FRONT_OFFICE", "GM", "MD"), getBookingByDate);
 router.get(
   "/active-today",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  getActiveRoomsToday
+  getActiveRoomsToday,
 );
 
 // Dynamic routes LAST
@@ -68,12 +73,12 @@ router.get(
 router.post(
   "/:id/checkout",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  checkoutBooking
+  checkoutBooking,
 );
 router.post(
   "/:id/cancel",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  cancelBooking
+  cancelBooking,
 );
 //router.patch("/:id/food-billing", authorize("FRONT_OFFICE","GM","MD"), updateFoodBilling);
 //router.patch("/:id/room-billing", authorize("FRONT_OFFICE","GM","MD"), updateRoomBilling);
@@ -81,75 +86,75 @@ router.post(
 router.get(
   "/:roomId/invoices",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  getInvoicesByRoom
+  getInvoicesByRoom,
 );
 router.patch(
   "/:id/guest",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateGuestInfo
+  updateGuestInfo,
 ); //for updating the edit
 router.patch(
   "/:id/guest-ids",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateGuestIds
+  updateGuestIds,
 );
 router.patch(
   "/:id/company",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateCompanyDetails
+  updateCompanyDetails,
 );
 //router.patch("/:id/services", authorize("FRONT_OFFICE","GM","MD"), updateBookingServices);
 
 router.patch(
   "/:id/reduce-stay",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  reduceStay
+  reduceStay,
 );
 router.post(
   "/:id/change-room",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  changeRoom
+  changeRoom,
 );
 router.post(
   "/:id/extend-stay",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  extendStay
+  extendStay,
 );
 
 //v2
 router.patch(
   "/:id/room-billing",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateRoomBilling
+  updateRoomBilling,
 );
 router.post(
   "/:id/advances",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  addAdvancePayment
+  addAdvancePayment,
 );
 
 router.patch(
   "/:id/advances/:advanceId",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateAdvancePayment
+  updateAdvancePayment,
 );
 
 router.delete(
   "/:id/advances/:advanceId",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  removeAdvancePayment
+  removeAdvancePayment,
 );
 
 router.patch(
   "/:id/food-billing",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateFoodBilling
+  updateFoodBilling,
 );
 
 router.get(
   "/orders/booking/:bookingId",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  getFoodBillingSummaryForBooking
+  getFoodBillingSummaryForBooking,
 );
 
 router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
@@ -157,6 +162,39 @@ router.get("/:id", authorize("FRONT_OFFICE", "GM", "MD"), getBooking);
 router.patch(
   "/:id/services",
   authorize("FRONT_OFFICE", "GM", "MD"),
-  updateBookingServices
+  updateBookingServices,
 );
+
+// Booking by ID
+router.get("/resolve/:bookingId", protect, resolveBooking);
+
+// Room-based resolution (today or date)
+router.get("/resolve/room/:roomId", protect, resolveBooking);
+
+router.post(
+  "/block",
+  protect,
+  authorize("FRONT_OFFICE", "GM", "MD"),
+  blockRoom,
+);
+
+router.post(
+  "/block-selected",
+  authorize("FRONT_OFFICE", "GM", "MD"),
+  blockSelectedRooms,
+);
+
+router.patch(
+  "/:id/convert",
+  authorize("FRONT_OFFICE", "GM", "MD"),
+  convertBlockToBooking
+);
+router.patch(
+  "/unblock/:id",
+  authorize("FRONT_OFFICE", "GM", "MD"),
+  unblockRoom
+);
+
+
+
 export default router;

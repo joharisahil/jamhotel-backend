@@ -557,7 +557,7 @@ export const createBooking = async ({
     companyName: rest.companyName,
     companyGSTIN: rest.companyGSTIN,
     companyAddress: rest.companyAddress,
-
+    source: rest.source ?? "WALK_IN",
     gstEnabled,
     roundOffEnabled,
     roundOffAmount,
@@ -1188,3 +1188,232 @@ export const getFoodOrdersForBooking = async (booking) => {
     createdAt: { $gte: checkIn, $lt: checkOut },
   });
 };
+
+export const convertBlockToBookingService = async ({
+  hotel_id,
+  bookingId,
+  payload,
+}) => {
+  const booking = await RoomBooking.findOne({
+    _id: bookingId,
+    hotel_id,
+  });
+
+  if (!booking) throw new Error("Booking not found");
+
+  if (booking.status !== "BLOCKED") {
+    throw new Error("Only blocked bookings can be converted");
+  }
+
+  /* ---------------- AVAILABILITY CHECK ---------------- */
+
+  // const overlapping = await RoomBooking.findOne({
+  //   _id: { $ne: booking._id },
+  //   hotel_id,
+  //   room_id: booking.room_id,
+  //   status: { $nin: ["CANCELLED"] },
+  //   checkIn: { $lt: booking.checkOut },
+  //   checkOut: { $gt: booking.checkIn },
+  // });
+
+  // if (overlapping) {
+  //   throw new Error("Room not available for selected dates");
+  // }
+
+  const room = await Room.findById(booking.room_id);
+  if (!room) throw new Error("Room not found");
+
+  /* ---------------- BASIC SETUP ---------------- */
+
+  const checkInDT = new Date(booking.checkIn);
+  const checkOutDT = new Date(booking.checkOut);
+
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+  const rawDays =
+    (checkOutDT.getTime() - checkInDT.getTime()) / MS_PER_DAY;
+
+  const nights = Math.max(1, Math.ceil(rawDays));
+
+  const plan = room.plans.find(
+    (p) =>
+      p.code === payload.planCode ||
+      `${p.code}_SINGLE` === payload.planCode ||
+      `${p.code}_DOUBLE` === payload.planCode
+  );
+
+  if (!plan) throw new Error("Invalid plan selected");
+
+  const isSingle = String(payload.planCode).includes("SINGLE");
+  const rate = isSingle ? plan.singlePrice : plan.doublePrice;
+
+  /* ---------------- ROOM TOTAL ---------------- */
+
+  let roomBase = 0;
+  let roomGSTFromRoom = 0;
+
+  const isSpecialPricing =
+    typeof payload.finalRoomPrice === "number" &&
+    payload.finalRoomPrice > 0;
+
+  if (isSpecialPricing) {
+    const finalPerNight = Number(payload.finalRoomPrice);
+    const basePerNight = +(finalPerNight / 1.05).toFixed(2);
+    const gstPerNight = +(finalPerNight - basePerNight).toFixed(2);
+
+    roomBase = +(basePerNight * nights).toFixed(2);
+    roomGSTFromRoom = +(gstPerNight * nights).toFixed(2);
+  } else {
+    roomBase = +(rate * nights).toFixed(2);
+  }
+
+  /* ---------------- EXTRA SERVICES ---------------- */
+
+  let extrasBase = 0;
+  let extrasGST = 0;
+
+  const gstEnabled = payload.gstEnabled ?? true;
+
+  (payload.addedServices || []).forEach((s) => {
+    const price = Number(s.price || 0);
+
+    const daysArray =
+      Array.isArray(s.days) && s.days.length > 0
+        ? s.days
+        : Array.from({ length: nights }, (_, i) => i + 1);
+
+    const uniqueDays = [...new Set(daysArray)].filter(
+      (d) => d >= 1 && d <= nights
+    );
+
+    const serviceAmount = price * uniqueDays.length;
+    extrasBase += serviceAmount;
+
+    const serviceGSTEnabled =
+      s.gstEnabled === undefined ? true : Boolean(s.gstEnabled);
+
+    if (serviceGSTEnabled && gstEnabled) {
+      extrasGST += +(serviceAmount * 0.05).toFixed(2);
+    }
+  });
+
+  /* ---------------- DISCOUNT ---------------- */
+
+  const discountPercent = Number(payload.discount || 0);
+  const discountScope = payload.discountScope || "TOTAL";
+
+  let discountedRoomBase = roomBase;
+  let discountedExtrasBase = extrasBase;
+  let discountAmount = 0;
+
+  if (discountPercent > 0) {
+    if (discountScope === "TOTAL") {
+      const gross = roomBase + extrasBase;
+      discountAmount = +((gross * discountPercent) / 100).toFixed(2);
+
+      discountedRoomBase -= +(
+        (discountAmount * roomBase) /
+        gross
+      ).toFixed(2);
+
+      discountedExtrasBase -= +(
+        (discountAmount * extrasBase) /
+        gross
+      ).toFixed(2);
+    }
+
+    if (discountScope === "ROOM") {
+      discountAmount = +(
+        (roomBase * discountPercent) /
+        100
+      ).toFixed(2);
+
+      discountedRoomBase -= discountAmount;
+    }
+
+    if (discountScope === "EXTRAS") {
+      discountAmount = +(
+        (extrasBase * discountPercent) /
+        100
+      ).toFixed(2);
+
+      discountedExtrasBase -= discountAmount;
+    }
+  }
+
+  /* ---------------- GST ---------------- */
+
+  let gstBase = 0;
+
+  if (gstEnabled && !isSpecialPricing) {
+    gstBase += discountedRoomBase;
+  }
+
+  if (gstEnabled) {
+    (payload.addedServices || []).forEach((s) => {
+      if (s.gstEnabled !== false) {
+        const daysArray =
+          Array.isArray(s.days) && s.days.length > 0
+            ? s.days
+            : Array.from({ length: nights }, (_, i) => i + 1);
+
+        const originalServiceBase = s.price * daysArray.length;
+
+        let discountedServiceBase = originalServiceBase;
+
+        if (extrasBase > 0) {
+          const ratio =
+            discountedExtrasBase / extrasBase;
+          discountedServiceBase =
+            originalServiceBase * ratio;
+        }
+
+        gstBase += discountedServiceBase;
+      }
+    });
+  }
+
+  let totalGST = +(gstBase * 0.05).toFixed(2);
+
+  if (isSpecialPricing) {
+    totalGST += roomGSTFromRoom;
+  }
+
+  const cgst = +(totalGST / 2).toFixed(2);
+  const sgst = +(totalGST / 2).toFixed(2);
+
+  const taxable = +(
+    discountedRoomBase + discountedExtrasBase
+  ).toFixed(2);
+
+  let grandTotal = taxable + cgst + sgst;
+
+  if (payload.roundOffEnabled) {
+    grandTotal = Math.round(grandTotal);
+  }
+
+  /* ---------------- UPDATE BOOKING ---------------- */
+
+  Object.assign(booking, {
+    ...payload,
+
+    taxable,
+    cgst,
+    sgst,
+    discountAmount,
+    grandTotal,
+
+    status:
+      checkInDT <= new Date()
+        ? "OCCUPIED"
+        : "CONFIRMED",
+  });
+
+  await booking.save();
+
+  await Room.findByIdAndUpdate(booking.room_id, {
+    status: "OCCUPIED",
+  });
+
+  return booking;
+};
+

@@ -1,10 +1,10 @@
 import RoomBooking from "../../models/RoomBooking.js";
+import { recalculatePayments } from "./roomBookingController.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 
-// /**
-//  * GET BOOKINGS FOR CALENDAR VIEW
-//  * /room-bookings/calendar?from=&to=
-//  */
+
+
+/*this is tested  */
 // export const getRoomBookingsForCalendar = asyncHandler(async (req, res) => {
 //   const hotel_id = req.user.hotel_id;
 //   const { from, to } = req.query;
@@ -26,16 +26,53 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 //     status: { $in: ["OCCUPIED", "CONFIRMED", "BLOCKED", "MAINTENANCE"] },
 //   })
 //     .select(
-//       "_id room_id checkIn checkOut status guestName companyName source"
+//       `
+//       _id
+//       room_id
+//       checkIn
+//       checkOut
+//       status
+//       guestName
+//       guestPhone
+//       companyName
+//       source
+//       adults
+//       grandTotal
+//       advancePaid
+//       `
 //     )
 //     .populate("room_id", "number type floor")
 //     .sort({ checkIn: 1 });
 
+//   const enrichedBookings = bookings.map((b) => {
+//     const total = b.grandTotal || 0;
+//     const paid = b.advancePaid || 0;
+
+//     let paymentStatus = "DUE";
+//     if (paid >= total && total > 0) paymentStatus = "PAID";
+//     else if (paid > 0) paymentStatus = "PARTIAL";
+
+//     return {
+//       ...b.toObject(),
+//       guests: {
+//         name: b.guestName,
+//         phone: b.guestPhone || "",
+//         adults: b.adults || 1,
+//       },
+//       payment: {
+//         total,
+//         paid,
+//         status: paymentStatus,
+//       },
+//     };
+//   });
+
 //   res.json({
 //     success: true,
-//     bookings,
+//     bookings: enrichedBookings,
 //   });
 // });
+
 export const getRoomBookingsForCalendar = asyncHandler(async (req, res) => {
   const hotel_id = req.user.hotel_id;
   const { from, to } = req.query;
@@ -56,50 +93,40 @@ export const getRoomBookingsForCalendar = asyncHandler(async (req, res) => {
     checkOut: { $gt: startDate },
     status: { $in: ["OCCUPIED", "CONFIRMED", "BLOCKED", "MAINTENANCE"] },
   })
-    .select(
-      `
-      _id
-      room_id
-      checkIn
-      checkOut
-      status
-      guestName
-      guestPhone
-      companyName
-      source
-      adults
-      grandTotal
-      advancePaid
-      `
-    )
-    .populate("room_id", "number type floor")
+    .populate("room_id", "number type floor baseRate plans")
     .sort({ checkIn: 1 });
 
-  const enrichedBookings = bookings.map((b) => {
-    const total = b.grandTotal || 0;
-    const paid = b.advancePaid || 0;
+  const enrichedBookings = await Promise.all(
+    bookings.map(async (b) => {
+      const recalculated = await recalculatePayments(b);
 
-    let paymentStatus = "DUE";
-    if (paid >= total && total > 0) paymentStatus = "PAID";
-    else if (paid > 0) paymentStatus = "PARTIAL";
+      const total = recalculated.grandTotal || 0;
+      const paid = recalculated.advancePaid || 0;
 
-    return {
-      ...b.toObject(),
-      guests: {
-        name: b.guestName,
-        phone: b.guestPhone || "",
-        adults: b.adults || 1,
-      },
-      payment: {
-        total,
-        paid,
-        status: paymentStatus,
-      },
-    };
-  });
+      let paymentStatus = "DUE";
+      if (paid >= total && total > 0) paymentStatus = "PAID";
+      else if (paid > 0) paymentStatus = "PARTIAL";
+
+      return {
+        ...recalculated.toObject(),
+        guests: {
+          name: recalculated.guestName,
+          phone: recalculated.guestPhone || "",
+          adults: recalculated.adults || 1,
+        },
+        payment: {
+          total,
+          paid,
+          status: paymentStatus,
+        },
+      };
+    })
+  );
 
   res.json({
     success: true,
     bookings: enrichedBookings,
   });
 });
+
+
