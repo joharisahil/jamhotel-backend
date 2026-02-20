@@ -20,9 +20,9 @@ import {
   REFERENCE_TYPE,
   AUDIT_ENTITY_TYPE,
   AUDIT_ACTION,
-} from "../constants/enums.js";
+} from "../../constants/enums.js";
 
-import { MSG } from "../constants/messages.js";
+import { MSG } from "../../constants/messages.js";
 
 // ── Generate Credit Note Number ───────────────────────
 const generateCNNumber = async (hotel_id) => {

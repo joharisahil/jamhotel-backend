@@ -8,7 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import LedgerAccount from "../../models/LedgerAccount.js";
 import * as ledgerService from "../../services/ledgerService.js";
 import { LEDGER_SEEDS } from "../../constants/ledgerSeeds.js";
-import { MSG } from "../constants/messages.js";
+import { MSG } from "../../constants/messages.js";
 import * as auditService from "../../services/auditService.js";
 
 import { AUDIT_ENTITY_TYPE, AUDIT_ACTION } from "../../constants/enums.js";

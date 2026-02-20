@@ -21,9 +21,9 @@ import {
   PAYMENT_STATUS,
   AUDIT_ENTITY_TYPE,
   AUDIT_ACTION,
-} from "../constants/enums.js";
+} from "../../constants/enums.js";
 
-import { MSG } from "../constants/messages.js";
+import { MSG } from "../../constants/messages.js";
 
 
 // ─────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ export const getInvoice = asyncHandler(async (req, res) => {
 // ─────────────────────────────────────────────────────────
 
 export const createInvoice = asyncHandler(async (req, res) => {
-  const { vendor_id, items, notes } = req.body;
+  const { vendorId, items, notes } = req.body;
 
   if (!items || items.length === 0) {
     return res
@@ -130,7 +130,7 @@ export const createInvoice = asyncHandler(async (req, res) => {
   }
 
   const vendor = await Vendor.findOne({
-    _id: vendor_id,
+    _id: vendorId,
     hotel_id: req.user.hotel_id,
   });
 

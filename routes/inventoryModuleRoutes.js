@@ -4,22 +4,22 @@
  */
 
 import express from "express";
-import { protect, authorize } from "../middleware/auth.js";
+import { protect, authorize } from "../utils/authMiddleware.js";
 import { ROLES } from "../constants/enums.js";
 
 // ── Controllers ───────────────────────────────────────────────────
-import * as categoryCtrl from "../controllers/categoryController.js";
-import * as itemCtrl from "../controllers/inventoryItemController.js";
-import * as vendorCtrl from "../controllers/vendorController.js";
-import * as invoiceCtrl from "../controllers/purchaseInvoiceController.js";
-import * as paymentCtrl from "../controllers/paymentController.js";
-import * as stockCtrl from "../controllers/stockController.js";
-import * as adjustmentCtrl from "../controllers/stockAdjustmentController.js";
-import * as ledgerCtrl from "../controllers/ledgerController.js";
-import * as journalCtrl from "../controllers/journalController.js";
-import * as creditNoteCtrl from "../controllers/creditNoteController.js";
-import * as auditCtrl from "../controllers/auditController.js";
-import * as dashboardCtrl from "../controllers/dashboardController.js";
+import * as categoryCtrl from "../controllers/inventory/categoryController.js";
+import * as itemCtrl from "../controllers/inventory/inventoryItemController.js";
+import * as vendorCtrl from "../controllers/inventory/vendorController.js";
+import * as invoiceCtrl from "../controllers/inventory/purchaseInvoiceController.js";
+import * as paymentCtrl from "../controllers/inventory/paymentController.js";
+import * as stockCtrl from "../controllers/inventory/stockController.js";
+import * as adjustmentCtrl from "../controllers/inventory/stockAdjustmentController.js";
+import * as ledgerCtrl from "../controllers/inventory/ledgerController.js";
+import * as journalCtrl from "../controllers/inventory/journalController.js";
+import * as creditNoteCtrl from "../controllers/inventory/creditNoteController.js";
+import * as auditCtrl from "../controllers/inventory/auditController.js";
+import * as dashboardCtrl from "../controllers/inventory/dashboardController.js";
 
 const router = express.Router();
 
@@ -39,7 +39,7 @@ router.put("/categories/:id", authorize(...GM_MD), categoryCtrl.updateCategory);
 router.patch(
   "/categories/:id/toggle",
   authorize(...GM_MD),
-  categoryCtrl.toggleCategory
+  categoryCtrl.toggleCategory,
 );
 
 // ── Inventory Items ───────────────────────────────────────────────
@@ -51,7 +51,7 @@ router.patch("/items/:id/toggle", authorize(...GM_MD), itemCtrl.toggleItem);
 router.get(
   "/items/:id/stock-history",
   authorize(...GM_MD),
-  itemCtrl.getStockHistory
+  itemCtrl.getStockHistory,
 );
 
 // ── Vendors ───────────────────────────────────────────────────────
@@ -59,16 +59,20 @@ router.get("/vendors", authorize(...GM_MD), vendorCtrl.listVendors);
 router.get("/vendors/:id", authorize(...GM_MD), vendorCtrl.getVendor);
 router.post("/vendors", authorize(...GM_MD), vendorCtrl.createVendor);
 router.put("/vendors/:id", authorize(...GM_MD), vendorCtrl.updateVendor);
-router.patch("/vendors/:id/toggle", authorize(...GM_MD), vendorCtrl.toggleVendor);
+router.patch(
+  "/vendors/:id/toggle",
+  authorize(...GM_MD),
+  vendorCtrl.toggleVendor,
+);
 router.get(
   "/vendors/:id/ledger",
   authorize(...GM_MD),
-  vendorCtrl.getVendorLedger
+  vendorCtrl.getVendorLedger,
 );
 router.get(
   "/vendors/:vendorId/outstanding",
   authorize(...GM_MD),
-  paymentCtrl.getVendorOutstanding
+  paymentCtrl.getVendorOutstanding,
 );
 
 // ── Purchase Invoices ─────────────────────────────────────────────
@@ -76,20 +80,32 @@ router.get("/invoices", authorize(...GM_MD), invoiceCtrl.listInvoices);
 router.get("/invoices/:id", authorize(...GM_MD), invoiceCtrl.getInvoice);
 router.post("/invoices", authorize(...GM_MD), invoiceCtrl.createInvoice);
 router.put("/invoices/:id", authorize(...GM_MD), invoiceCtrl.updateInvoice);
-router.patch("/invoices/:id/approve", authorize(...GM_MD), invoiceCtrl.approveInvoice);
-router.patch("/invoices/:id/post", authorize(...GM_MD), invoiceCtrl.postInvoice);
-router.patch("/invoices/:id/cancel", authorize(...GM_MD), invoiceCtrl.cancelInvoice);
+router.patch(
+  "/invoices/:id/approve",
+  authorize(...GM_MD),
+  invoiceCtrl.approveInvoice,
+);
+router.patch(
+  "/invoices/:id/post",
+  authorize(...GM_MD),
+  invoiceCtrl.postInvoice,
+);
+router.patch(
+  "/invoices/:id/cancel",
+  authorize(...GM_MD),
+  invoiceCtrl.cancelInvoice,
+);
 
 // ── Payments ──────────────────────────────────────────────────────
 router.post(
   "/invoices/:invoiceId/payments",
   authorize(...GM_MD),
-  paymentCtrl.recordPayment
+  paymentCtrl.recordPayment,
 );
 router.get(
   "/invoices/:invoiceId/payments",
   authorize(...GM_MD),
-  paymentCtrl.getPaymentHistory
+  paymentCtrl.getPaymentHistory,
 );
 
 // ── Stock ─────────────────────────────────────────────────────────
@@ -97,37 +113,37 @@ router.get("/stock/summary", authorize(...GM_MD), stockCtrl.getStockSummary);
 router.get(
   "/stock/transactions",
   authorize(...GM_MD),
-  stockCtrl.getTransactions
+  stockCtrl.getTransactions,
 );
 router.get("/stock/expiry", authorize(...GM_MD), stockCtrl.getExpiryDashboard);
 router.post(
   "/stock/mark-expired",
   authorize(...MD),
-  stockCtrl.markExpiredBatches
+  stockCtrl.markExpiredBatches,
 );
 
 // ── Stock Adjustments ─────────────────────────────────────────────
 router.post(
   "/stock/adjustments",
   authorize(...GM_MD),
-  adjustmentCtrl.createAdjustment
+  adjustmentCtrl.createAdjustment,
 );
 router.get(
   "/stock/adjustments",
   authorize(...GM_MD),
-  adjustmentCtrl.listAdjustments
+  adjustmentCtrl.listAdjustments,
 );
 
 // ── Credit Notes ──────────────────────────────────────────────────
 router.post(
   "/credit-notes",
   authorize(...GM_MD),
-  creditNoteCtrl.createCreditNote
+  creditNoteCtrl.createCreditNote,
 );
 router.get(
   "/credit-notes",
   authorize(...GM_MD),
-  creditNoteCtrl.listCreditNotes
+  creditNoteCtrl.listCreditNotes,
 );
 
 // ── General Ledger ────────────────────────────────────────────────
@@ -137,22 +153,18 @@ router.post("/ledger/accounts/seed", authorize(...MD), ledgerCtrl.seedAccounts);
 router.get(
   "/ledger/trial-balance",
   authorize(...GM_MD),
-  ledgerCtrl.getTrialBalance
+  ledgerCtrl.getTrialBalance,
 );
 router.get(
   "/ledger/accounts/:id/drilldown",
   authorize(...GM_MD),
-  ledgerCtrl.getAccountDrilldown
+  ledgerCtrl.getAccountDrilldown,
 );
 
 // ── Journal Entries ───────────────────────────────────────────────
 router.get("/journal", authorize(...GM_MD), journalCtrl.listJournalEntries);
 router.get("/journal/:id", authorize(...GM_MD), journalCtrl.getJournalEntry);
-router.post(
-  "/journal/:id/reverse",
-  authorize(...MD),
-  journalCtrl.reverseEntry
-);
+router.post("/journal/:id/reverse", authorize(...MD), journalCtrl.reverseEntry);
 
 // ── Audit Trail ───────────────────────────────────────────────────
 router.get("/audit", authorize(...GM_MD), auditCtrl.getAuditLogs);

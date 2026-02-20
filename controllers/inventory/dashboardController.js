@@ -5,7 +5,7 @@
  */
 
 import mongoose from "mongoose";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
 
 import InventoryItem from "../../models/InventoryItem.js";
 import PurchaseInvoice from "../../models/PurchaseInvoice.js";
