@@ -25,8 +25,8 @@ export const createAdjustment = asyncHandler(async (req, res) => {
   session.startTransaction();
 
   try {
-    const { item_id, type, quantity, reason, notes } = req.body;
-
+    const { itemId, type, quantity, reason, notes } = req.body;
+    const item_id = itemId;
     const item = await InventoryItem.findOne({
       _id: item_id,
       hotel_id: req.user.hotel_id,
@@ -106,9 +106,9 @@ export const createAdjustment = asyncHandler(async (req, res) => {
 // ── List Adjustments ──────────────────────────────────────────────
 
 export const listAdjustments = asyncHandler(async (req, res) => {
-  const { item_id, reason, fromDate, toDate, page = 1, limit = 50 } =
+  const { itemId, reason, fromDate, toDate, page = 1, limit = 50 } =
     req.query;
-
+  const item_id = itemId;
   const filter = { hotel_id: req.user.hotel_id };
 
   if (item_id) filter.item_id = item_id;

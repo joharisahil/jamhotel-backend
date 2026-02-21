@@ -13,7 +13,7 @@ import JournalEntry from "../models/JournalEntry.js";
 import LedgerAccount from "../models/LedgerAccount.js";
 import PurchaseInvoice from "../models/PurchaseInvoice.js";
 import Payment from "../models/Payment.js";
-
+import { LEDGER_SEEDS } from "../constants/ledgerSeeds.js";
 import {
   LEDGER_ACCOUNT_TYPE,
   JOURNAL_ENTRY_TYPE,
@@ -303,3 +303,25 @@ export async function getVendorLedger(
     },
   };
 }
+
+export const seedLedgerAccountsForHotel = async (hotel_id, userId) => {
+  for (const seed of LEDGER_SEEDS) {
+    const exists = await LedgerAccount.findOne({
+      hotel_id,
+      code: seed.code,
+    });
+
+    if (!exists) {
+      await LedgerAccount.create({
+        hotel_id,
+        code: seed.code,
+        name: seed.name,
+        type: seed.type,
+        description: seed.description,
+        isActive: true,
+        system: true,      // 🔥 important
+        createdBy: userId,
+      });
+    }
+  }
+};

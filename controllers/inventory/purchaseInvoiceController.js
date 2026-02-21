@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 
 import PurchaseInvoice from "../../models/PurchaseInvoice.js";
 import Vendor from "../../models/Vendor.js";
-
+import InventoryItem from "../../models/InventoryItem.js";
 import * as invoicePosting from "../../services/invoicePostingService.js";
 import * as taxService from "../../services/taxService.js";
 import * as auditService from "../../services/auditService.js";
@@ -124,9 +124,10 @@ export const createInvoice = asyncHandler(async (req, res) => {
   const { vendorId, items, notes } = req.body;
 
   if (!items || items.length === 0) {
-    return res
-      .status(400)
-      .json({ success: false, message: MSG.INVOICE_NO_ITEMS });
+    return res.status(400).json({
+      success: false,
+      message: MSG.INVOICE_NO_ITEMS,
+    });
   }
 
   const vendor = await Vendor.findOne({
@@ -135,12 +136,45 @@ export const createInvoice = asyncHandler(async (req, res) => {
   });
 
   if (!vendor) {
-    return res
-      .status(404)
-      .json({ success: false, message: MSG.NOT_FOUND("Vendor") });
+    return res.status(404).json({
+      success: false,
+      message: MSG.NOT_FOUND("Vendor"),
+    });
   }
 
-  const calc = taxService.calculateInvoiceTotals(items);
+  // 🔥 STEP 1: Enrich items with inventory snapshot
+  const enrichedItems = [];
+
+  for (const item of items) {
+    const inventoryItem = await InventoryItem.findOne({
+      _id: item.itemId,
+      hotel_id: req.user.hotel_id,
+    });
+
+    if (!inventoryItem) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid inventory item",
+      });
+    }
+
+    enrichedItems.push({
+      item_id: inventoryItem._id,
+      itemName: inventoryItem.name,
+      itemSku: inventoryItem.sku,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      gstPercentage: item.gstPercentage,
+      taxType: inventoryItem.taxType,
+      isPerishable: inventoryItem.isPerishable,
+      batchNumber: item.batchNumber || "",
+      expiryDate: item.expiryDate || null,
+    });
+  }
+
+  // 🔥 STEP 2: Now calculate totals
+  const calc = taxService.calculateInvoiceTotals(enrichedItems);
+
   const invoiceNumber = await generateInvoiceNumber(req.user.hotel_id);
 
   const invoice = await PurchaseInvoice.create({
@@ -167,21 +201,8 @@ export const createInvoice = asyncHandler(async (req, res) => {
     ],
   });
 
-  await auditService.log({
-    hotel_id: req.user.hotel_id,
-    entityType: AUDIT_ENTITY_TYPE.PURCHASE_INVOICE,
-    entity_id: invoice._id,
-    entityReference: invoiceNumber,
-    action: AUDIT_ACTION.CREATED,
-    description: `Draft invoice ${invoiceNumber} created. Total ₹${calc.grandTotal}`,
-    after: invoice.toObject(),
-    user: req.user,
-    ipAddress: req.ip,
-  });
-
   res.status(201).json({ success: true, data: invoice });
 });
-
 
 // ─────────────────────────────────────────────────────────
 // Update Draft

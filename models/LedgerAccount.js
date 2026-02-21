@@ -34,6 +34,10 @@ const ledgerAccountSchema = new mongoose.Schema(
       enum: { values: Object.values(LEDGER_ACCOUNT_TYPE), message: 'Invalid account type' },
       required: [true, 'Account type is required'],
     },
+    system: {
+  type: Boolean,
+  default: false,
+},
     parent_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'LedgerAccount',
