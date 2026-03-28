@@ -31,9 +31,23 @@ export const updateMenuItemSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
 
-  price: z.number().optional(),
-  priceHalf: z.number().optional(),
-  priceFull: z.number().optional(),
+  category_id: z.string().optional(),
+  isVeg: z.boolean().optional(),
+
+  priceSingle: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+
+  priceHalf: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+
+  priceFull: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
 
   isActive: z.boolean().optional(),
   imageUrl: z.string().optional(),

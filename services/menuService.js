@@ -87,12 +87,53 @@ export const listMenuItems = async (hotel_id, category_id) => {
 };
 
 export const updateMenuItem = async (hotel_id, id, payload) => {
+  const setData = {};
+  const unsetData = {};
+
+  // ✅ Normal fields
+  if (payload.name !== undefined) setData.name = payload.name;
+  if (payload.description !== undefined) setData.description = payload.description;
+  if (payload.category_id !== undefined) setData.category_id = payload.category_id;
+  if (payload.isVeg !== undefined) setData.isVeg = payload.isVeg;
+  if (payload.isActive !== undefined) setData.isActive = payload.isActive;
+
+  // ✅ PRICE LOGIC (MAIN FIX)
+
+  if (payload.priceSingle !== undefined) {
+    setData.priceSingle = payload.priceSingle;
+
+    // ❗ remove others
+    unsetData.priceHalf = "";
+    unsetData.priceFull = "";
+  }
+
+  if (payload.priceHalf !== undefined) {
+    setData.priceHalf = payload.priceHalf;
+
+    // ❗ remove single ONLY (not full)
+    unsetData.priceSingle = "";
+  }
+
+  if (payload.priceFull !== undefined) {
+    setData.priceFull = payload.priceFull;
+
+    // ❗ remove single ONLY (not half)
+    unsetData.priceSingle = "";
+  }
+
+  const updateQuery = {
+    ...(Object.keys(setData).length && { $set: setData }),
+    ...(Object.keys(unsetData).length && { $unset: unsetData }),
+  };
+
   const item = await MenuItem.findOneAndUpdate(
     { _id: id, hotel_id },
-    payload,
+    updateQuery,
     { new: true }
   );
+
   emitToHotel(hotel_id, "menu:updated", { type: "item_updated", item });
+
   return item;
 };
 
