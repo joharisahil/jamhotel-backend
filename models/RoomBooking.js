@@ -32,9 +32,8 @@ const idProofSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
-
 
 const addedServiceSchema = new mongoose.Schema(
   {
@@ -93,6 +92,12 @@ const roomBookingSchema = new mongoose.Schema(
       ref: "Room",
       required: true,
     },
+    /* -------- Booking Source -------- */
+    source: {
+      type: String,
+      enum: ["WALK_IN", "OTA", "BANQUET", "CORPORATE"],
+      default: "WALK_IN",
+    },
 
     /* -------- Guest -------- */
     guestName: String,
@@ -120,19 +125,19 @@ const roomBookingSchema = new mongoose.Schema(
     gstEnabled: { type: Boolean, default: true },
 
     planCode: String,
-   pricingType: {
-  type: String,
-  enum: ["BASE_EXCLUSIVE", "FINAL_INCLUSIVE"],
-  default: "BASE_EXCLUSIVE",
-},
+    pricingType: {
+      type: String,
+      enum: ["BASE_EXCLUSIVE", "FINAL_INCLUSIVE"],
+      default: "BASE_EXCLUSIVE",
+    },
 
     finalRoomPrice: {
       type: Number,
       default: null,
       min: 0,
     },
-    adults: Number,
-    children: Number,
+    adults: { type: Number, default: 0 },
+    children: { type: Number, default: 0 },
 
     /* -------- Discounts -------- */
     discount: { type: Number, default: 0 },
@@ -155,11 +160,27 @@ const roomBookingSchema = new mongoose.Schema(
     foodTotals: { type: foodTotalsSchema, default: {} },
 
     /* -------- Extras -------- */
-    guestIds: [idProofSchema],
+    guestIds: {
+      type: [idProofSchema],
+      default: [],
+    },
+
     addedServices: [addedServiceSchema],
 
     /* -------- Status -------- */
-    status: { type: String, default: "OCCUPIED" },
+    status: {
+      type: String,
+      enum: [
+        "CONFIRMED", // future booking
+        "OCCUPIED", // guest currently staying
+        "CHECKEDOUT", // stay completed
+        "CANCELLED", // cancelled booking
+        "NO_SHOW", // optional but VERY useful
+        "BLOCKED", // admin block
+        "MAINTENANCE", // room out of service
+      ],
+      default: "OCCUPIED",
+    },
 
     /* =====================================================
        🟢 MULTIPLE ADVANCE PAYMENTS (NEW)
@@ -188,6 +209,11 @@ const roomBookingSchema = new mongoose.Schema(
 
 /* ===================== INDEXES ===================== */
 roomBookingSchema.index({ hotel_id: 1, room_id: 1 });
+roomBookingSchema.index({
+  hotel_id: 1,
+  checkIn: 1,
+  checkOut: 1,
+});
 
 export default mongoose.model("RoomBooking", roomBookingSchema);
 

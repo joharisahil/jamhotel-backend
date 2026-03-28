@@ -33,75 +33,180 @@ function isOverlapping(existingIn, existingOut, reqIn, reqOut) {
  *
  * This method returns rooms with enriched metadata for frontend.
  */
+
+
+
 export const getAvailableRoomsForDates = async (
   hotel_id,
   checkInDT,
   checkOutDT,
   roomType = null
 ) => {
+  /* ===============================
+     1️⃣ Minimal Input Validation
+     (NO past-date restriction)
+  ================================ */
+
   const reqIn = new Date(checkInDT);
   const reqOut = new Date(checkOutDT);
 
-  if (isNaN(reqIn) || isNaN(reqOut) || reqIn >= reqOut) {
-    throw new Error("Invalid check-in/check-out datetime");
+  if (
+    !hotel_id ||
+    isNaN(reqIn.getTime()) ||
+    isNaN(reqOut.getTime()) ||
+    reqIn >= reqOut
+  ) {
+    throw new Error("Invalid check-in / check-out datetime");
   }
 
-  // 1. Fetch ALL bookings overlapping or adjacent
-  const allBookings = await RoomBooking.find({
+  /* ===============================
+     2️⃣ Fetch Active Bookings
+  ================================ */
+
+  const bookings = await RoomBooking.find({
     hotel_id,
-    status: { $nin: ["CANCELLED"] }
+    status: { $ne: "CANCELLED" }
   }).select("room_id checkIn checkOut");
 
-  const blockingMap = new Map();
+  const blockedRooms = new Set();
   const sameDayCheckoutMap = new Map();
 
-  for (const b of allBookings) {
-    const existingIn = new Date(b.checkIn);
-    const existingOut = new Date(b.checkOut);
+  /* ===============================
+     3️⃣ Process Bookings
+  ================================ */
 
-    // If the existing checkout <= requested checkin → does NOT block the room.
+  for (const booking of bookings) {
+    const existingIn = new Date(booking.checkIn);
+    const existingOut = new Date(booking.checkOut);
+    const roomId = String(booking.room_id);
+
+    if (
+      isNaN(existingIn.getTime()) ||
+      isNaN(existingOut.getTime())
+    ) {
+      continue;
+    }
+
+    /**
+     * Case 1: Existing checkout <= requested check-in
+     * → Does NOT block the room (even for past dates)
+     */
     if (existingOut <= reqIn) {
-      // Track that this room has same-day earlier checkout
-      // Only record if it's the same calendar date
       const isSameDay =
         existingOut.getFullYear() === reqIn.getFullYear() &&
         existingOut.getMonth() === reqIn.getMonth() &&
         existingOut.getDate() === reqIn.getDate();
 
       if (isSameDay) {
-        sameDayCheckoutMap.set(String(b.room_id), existingOut);
+        sameDayCheckoutMap.set(roomId, existingOut);
       }
       continue;
     }
 
-    // If existing booking overlaps → block the room
+    /**
+     * Case 2: Overlapping booking
+     * → Room is blocked
+     */
     if (isOverlapping(existingIn, existingOut, reqIn, reqOut)) {
-      blockingMap.set(String(b.room_id), existingOut);
+      blockedRooms.add(roomId);
     }
   }
 
-  // 2. Fetch all rooms for this hotel
+  /* ===============================
+     4️⃣ Fetch Rooms
+  ================================ */
+
   const roomQuery = { hotel_id };
   if (roomType) roomQuery.type = roomType;
 
   const rooms = await Room.find(roomQuery).sort({ number: 1 });
 
-  // 3. Build final result array with metadata
-  const result = rooms
-    .filter(r => !blockingMap.has(String(r._id)))  // remove fully blocked rooms
-    .map(r => {
-      const rid = String(r._id);
+  /* ===============================
+     5️⃣ Build Final Result
+  ================================ */
+
+  return rooms
+    .filter(room => !blockedRooms.has(String(room._id)))
+    .map(room => {
+      const rid = String(room._id);
 
       return {
-        ...r.toObject(),
+        ...room.toObject(),
         available: true,
         hasSameDayCheckout: sameDayCheckoutMap.has(rid),
         checkoutTime: sameDayCheckoutMap.get(rid) || null
       };
     });
-
-  return result;
 };
+// export const getAvailableRoomsForDates = async (
+//   hotel_id,
+//   checkInDT,
+//   checkOutDT,
+//   roomType = null
+// ) => {
+//   const reqIn = new Date(checkInDT);
+//   const reqOut = new Date(checkOutDT);
+
+//   if (isNaN(reqIn) || isNaN(reqOut) || reqIn >= reqOut) {
+//     throw new Error("Invalid check-in/check-out datetime");
+//   }
+
+//   // 1. Fetch ALL bookings overlapping or adjacent
+//   const allBookings = await RoomBooking.find({
+//     hotel_id,
+//     status: { $nin: ["CANCELLED"] }
+//   }).select("room_id checkIn checkOut");
+
+//   const blockingMap = new Map();
+//   const sameDayCheckoutMap = new Map();
+
+//   for (const b of allBookings) {
+//     const existingIn = new Date(b.checkIn);
+//     const existingOut = new Date(b.checkOut);
+
+//     // If the existing checkout <= requested checkin → does NOT block the room.
+//     if (existingOut <= reqIn) {
+//       // Track that this room has same-day earlier checkout
+//       // Only record if it's the same calendar date
+//       const isSameDay =
+//         existingOut.getFullYear() === reqIn.getFullYear() &&
+//         existingOut.getMonth() === reqIn.getMonth() &&
+//         existingOut.getDate() === reqIn.getDate();
+
+//       if (isSameDay) {
+//         sameDayCheckoutMap.set(String(b.room_id), existingOut);
+//       }
+//       continue;
+//     }
+
+//     // If existing booking overlaps → block the room
+//     if (isOverlapping(existingIn, existingOut, reqIn, reqOut)) {
+//       blockingMap.set(String(b.room_id), existingOut);
+//     }
+//   }
+
+//   // 2. Fetch all rooms for this hotel
+//   const roomQuery = { hotel_id };
+//   if (roomType) roomQuery.type = roomType;
+
+//   const rooms = await Room.find(roomQuery).sort({ number: 1 });
+
+//   // 3. Build final result array with metadata
+//   const result = rooms
+//     .filter(r => !blockingMap.has(String(r._id)))  // remove fully blocked rooms
+//     .map(r => {
+//       const rid = String(r._id);
+
+//       return {
+//         ...r.toObject(),
+//         available: true,
+//         hasSameDayCheckout: sameDayCheckoutMap.has(rid),
+//         checkoutTime: sameDayCheckoutMap.get(rid) || null
+//       };
+//     });
+
+//   return result;
+// };
 
 /**
  * BASIC ROOM CRUD SERVICES

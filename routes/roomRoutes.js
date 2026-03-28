@@ -1,5 +1,6 @@
 import express from "express";
 import { createRoom, listRooms, getRoom, updateRoom, deleteRoom, getRoomTypes, getRoomsByType, getRoomPlans, listAvailableRooms, getAvailableRooms, getAllRoomsByDate, getBookingByRoomForToday } from "../controllers/roomController.js";
+import { getRoomBookingsForCalendar } from "../controllers/v2/roomCalendarController.js";
 import { protect, authorize } from "../utils/authMiddleware.js";
 const router = express.Router();
 
@@ -16,5 +17,9 @@ router.put("/:id", authorize("FRONT_OFFICE", "GM", "MD"), updateRoom);
 router.delete("/:id", authorize("FRONT_OFFICE", "GM", "MD"), deleteRoom);
 router.get("/date/all", authorize("FRONT_OFFICE", "GM", "MD"), getAllRoomsByDate);
 //main api for giving room details on manage room booking
-router.get("/current/today/:roomId", getBookingByRoomForToday); 
+router.get("/current/today/:roomId", getBookingByRoomForToday);
+
+
+//v2 for calendar
+router.get("/calendar/view",  authorize("FRONT_OFFICE", "GM", "MD"), getRoomBookingsForCalendar);
 export default router;

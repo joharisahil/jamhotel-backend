@@ -2,10 +2,10 @@
 import RoomBooking from "../../models/RoomBooking.js";
 import Room from "../../models/Room.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
-import { recalculateRoomBilling } from "../../services/bookingService.js";
+import { recalculateRoomBilling, convertBlockToBookingService  } from "../../services/bookingService.js";
 import Order from "../../models/Order.js";
 import { calculateFoodBillingForBooking } from "../../services/foodBilling.service.js";
-
+import * as bookingService from "../../services/bookingService.js";
 
 const splitGST = (finalAmount, gstRate = 5) => {
   const base = +(finalAmount / (1 + gstRate / 100)).toFixed(2);
@@ -13,6 +13,8 @@ const splitGST = (finalAmount, gstRate = 5) => {
   return { base, gst };
 };
 
+
+/*main brain for all financial api's */
 export const recalculatePayments = async (booking) => {
   if (!booking || !booking.room_id) return booking;
 
@@ -172,7 +174,6 @@ booking.sgst = +(totalGST / 2).toFixed(2);
 
   return booking;
 };
-
 
 /* POST /api/bookings/:id/advance */
 export const addAdvancePayment = asyncHandler(async (req, res) => {
@@ -393,7 +394,6 @@ export const finalCheckout = async (req, res) => {
   }
 };
 
-
 export const updateRoomBilling = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { discount = 0, gstEnabled } = req.body;
@@ -494,7 +494,6 @@ export const updateBookingServices = asyncHandler(async (req, res) => {
     booking,
   });
 });
-
 
 export const updateFoodBilling = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -603,8 +602,6 @@ export const getFoodBillingSummaryForBooking = asyncHandler(
   },
 );
 
-
-
 export const getBooking = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
@@ -625,4 +622,288 @@ export const getBooking = asyncHandler(async (req, res) => {
   booking = await recalculatePayments(booking);
 
   res.json({ success: true, booking });
+});
+
+export const resolveBooking = asyncHandler(async (req, res) => {
+  const hotel_id = req.user.hotel_id;
+  const { bookingId, roomId } = req.params;
+  const { date } = req.query;
+
+  let booking = null;
+
+  /* ===================== 1️⃣ BOOKING ID (ABSOLUTE TRUTH) ===================== */
+  if (bookingId) {
+    booking = await RoomBooking.findById(bookingId).populate("room_id");
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
+
+    if (String(booking.hotel_id) !== String(hotel_id)) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Forbidden" });
+    }
+
+    // ✅ keep your existing business logic
+    booking = await recalculatePayments(booking);
+
+    return res.json({ success: true, booking });
+  }
+
+  /* ===================== 2️⃣ ROOM CONTEXT ===================== */
+  if (!roomId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "roomId is required" });
+  }
+
+  // date provided → use it
+  // date missing → default to NOW (today behavior)
+ const targetDate = date
+  ? new Date(`${date}T00:00:00.000+05:30`) // IST-safe
+  : new Date();
+
+
+  booking = await RoomBooking.findOne({
+    hotel_id,
+    room_id: roomId,
+    status: { $nin: ["CANCELLED", "CHECKEDOUT"] },
+    checkIn: { $lte: targetDate },
+    checkOut: { $gt: targetDate },
+  }).populate("room_id");
+
+  return res.json({
+    success: true,
+    booking: booking || null,
+  });
+});
+
+export const blockRoom = asyncHandler(async (req, res, next) => {
+  try {
+    const { room_id, checkIn, checkOut, reason } = req.body;
+
+    if (!room_id || !checkIn || !checkOut) {
+      return res.status(400).json({
+        message: "room_id, checkIn and checkOut are required",
+      });
+    }
+
+    if (new Date(checkOut) <= new Date(checkIn)) {
+      return res.status(400).json({
+        message: "checkOut must be after checkIn",
+      });
+    }
+
+    // 🔒 Prevent overlapping bookings / blocks
+    const conflict = await RoomBooking.findOne({
+      room_id,
+      status: { $in: ["CONFIRMED", "OCCUPIED", "BLOCKED", "MAINTENANCE"] },
+      $or: [
+        {
+          checkIn: { $lt: new Date(checkOut) },
+          checkOut: { $gt: new Date(checkIn) },
+        },
+      ],
+    });
+
+    if (conflict) {
+      return res.status(409).json({
+        message: "Room is already booked or blocked for selected dates",
+      });
+    }
+
+    const booking = await RoomBooking.create({
+      hotel_id: req.user.hotel_id,
+      room_id,
+
+      source: "WALK_IN",
+      status: "BLOCKED",
+
+      checkIn,
+      checkOut,
+
+      // 🧑 Guest placeholders
+      guestName: "BLOCKED",
+      guestPhone: null,
+      guestCity: null,
+      guestNationality: null,
+      guestAddress: null,
+      guestIds: [],
+
+      // 🏢 Company placeholders
+      companyName: "-",
+      companyGSTIN: null,
+      companyAddress: null,
+
+      // 👨‍👩‍👧‍👦 Counts
+      adults: 0,
+      children: 0,
+
+      // 💰 Billing zeroed
+      taxable: 0,
+      cgst: 0,
+      sgst: 0,
+      grandTotal: 0,
+      advancePaid: 0,
+      balanceDue: 0,
+
+      notes: reason || "Room blocked",
+    });
+
+    res.status(201).json({
+      message: "Room blocked successfully",
+      booking,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export const unblockRoom = asyncHandler(async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // 1️⃣ Find blocked booking
+    const booking = await RoomBooking.findOne({
+      _id: id,
+      hotel_id: req.user.hotel_id,
+      status: "BLOCKED",
+    }).populate("room_id", "number");
+
+    if (!booking) {
+      return res.status(404).json({
+        message: "Blocked booking not found",
+      });
+    }
+
+    // 2️⃣ Update status instead of deleting (recommended)
+    booking.status = "CANCELLED";
+    booking.notes = (booking.notes || "") + " | Unblocked manually";
+
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Room unblocked successfully",
+      room: {
+        roomId: booking.room_id._id,
+        roomNumber: booking.room_id.number,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export const blockSelectedRooms = asyncHandler(async (req, res, next) => {
+  try {
+    const { roomIds, checkIn, checkOut, reason } = req.body;
+
+    if (!Array.isArray(roomIds) || roomIds.length === 0) {
+      return res.status(400).json({
+        message: "roomIds array is required",
+      });
+    }
+
+    if (!checkIn || !checkOut) {
+      return res.status(400).json({
+        message: "checkIn and checkOut are required",
+      });
+    }
+
+    if (new Date(checkOut) <= new Date(checkIn)) {
+      return res.status(400).json({
+        message: "checkOut must be after checkIn",
+      });
+    }
+
+    // 1️⃣ Fetch selected rooms (for room numbers)
+    const rooms = await Room.find({
+      hotel_id: req.user.hotel_id,
+      _id: { $in: roomIds },
+      status: { $ne: "DELETED" },
+    }).select("_id number");
+
+    if (rooms.length !== roomIds.length) {
+      return res.status(400).json({
+        message: "One or more rooms are invalid",
+      });
+    }
+
+    // 2️⃣ Check conflicts ONLY for selected rooms
+    const conflicts = await RoomBooking.find({
+      hotel_id: req.user.hotel_id,
+      room_id: { $in: roomIds },
+      status: { $in: ["CONFIRMED", "OCCUPIED", "BLOCKED", "MAINTENANCE"] },
+      checkIn: { $lt: new Date(checkOut) },
+      checkOut: { $gt: new Date(checkIn) },
+    }).populate("room_id", "number");
+
+    if (conflicts.length > 0) {
+      return res.status(409).json({
+        message: "Some selected rooms are already booked or blocked",
+        conflicts: conflicts.map((b) => ({
+          roomId: b.room_id._id,
+          roomNumber: b.room_id.number,
+          status: b.status,
+          checkIn: b.checkIn,
+          checkOut: b.checkOut,
+        })),
+      });
+    }
+
+    // 3️⃣ Block ONLY selected rooms
+    const bookings = rooms.map((room) => ({
+      hotel_id: req.user.hotel_id,
+      room_id: room._id,
+
+      source: "WALK_IN",
+      status: "BLOCKED",
+
+      checkIn,
+      checkOut,
+
+      guestName: "BLOCKED",
+      companyName: "-",
+      guestIds: [],
+
+      taxable: 0,
+      cgst: 0,
+      sgst: 0,
+      grandTotal: 0,
+
+      notes: reason || "Rooms blocked",
+    }));
+
+    await RoomBooking.insertMany(bookings);
+
+    res.status(201).json({
+      message: "Selected rooms blocked successfully",
+      blockedRooms: rooms.map((r) => ({
+        roomId: r._id,
+        roomNumber: r.number,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export const convertBlockToBooking = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const booking = await bookingService.convertBlockToBookingService ({
+    hotel_id: req.user.hotel_id,
+    bookingId: id,
+    payload: req.body,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Block converted successfully",
+    booking,
+  });
 });
