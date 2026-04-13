@@ -6,12 +6,14 @@ export const calculateFoodBillingForBooking = async (booking) => {
   const checkOut = new Date(booking.checkOut);
 
   const qrAndRoomOrders = await Order.find({
+    booking_id: booking._id,
     room_id: booking.room_id,
     hotel_id: booking.hotel_id,
     createdAt: { $gte: checkIn, $lt: checkOut },
   });
 
   const transferredOrders = await Order.find({
+    booking_id: booking._id,
     room_id: booking.room_id,
     hotel_id: booking.hotel_id,
     paymentStatus: "PENDING",

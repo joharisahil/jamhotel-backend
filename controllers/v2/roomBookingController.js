@@ -546,12 +546,14 @@ export const getFoodBillingSummaryForBooking = asyncHandler(
      * 1️⃣ FETCH ORDERS (UNCHANGED LOGIC)
      * ----------------------------------------- */
     const qrAndRoomOrders = await Order.find({
+       booking_id: booking._id,
       room_id: booking.room_id,
       hotel_id: booking.hotel_id,
       createdAt: { $gte: checkIn, $lt: checkOut },
     });
 
     const transferredOrders = await Order.find({
+       booking_id: booking._id,
       room_id: booking.room_id,
       hotel_id: booking.hotel_id,
       paymentStatus: "PENDING",
